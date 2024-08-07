@@ -4,7 +4,7 @@
 import time
 import logging
 
-from .routes import user_routes ,otp, subscription
+from .routes import user_routes ,otp
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -88,4 +88,4 @@ def read_root():
 # Routes
 app.include_router(prefix="/user", router=user_routes.router)
 app.include_router(prefix="/otp", router=otp.router, tags=["OTP"])
-app.include_router(prefix="/subscription", router=subscription.router, tags=["Subscription"])
+# app.include_router(prefix="/subscription", router=subscription.router, tags=["Subscription"])
