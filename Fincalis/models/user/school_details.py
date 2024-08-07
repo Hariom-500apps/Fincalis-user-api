@@ -4,7 +4,7 @@ from typing import Optional
 from datetime import datetime
 from sqlmodel import TIMESTAMP, text
 import uuid as uuid_pkg
-from sqlmodel import SQLModel, Field, Column, Relationship, UniqueConstraint
+from sqlmodel import SQLModel, Field, Column, UniqueConstraint
 
 
 class School(SQLModel):
@@ -32,9 +32,6 @@ class School(SQLModel):
         default=None, max_length=10, min_length=10, nullable=False
     )
 
-    # User status
-    is_active: bool = Field(default=True)
-
 
 class SchoolIn(School):
     # User id
@@ -50,10 +47,13 @@ class SchoolOut(SchoolIn):
         nullable=False,
     )
 
+    # User status
+    is_active: bool = Field(default=True)
+
 
 class UserSchoolInfo(SchoolOut, table=True):
 
-    __tablename__ = "user_school_info"
+    __tablename__ = "school_details"
 
     # Id
     id: Optional[int] = Field(default=None, index=True, primary_key=True)
@@ -69,9 +69,11 @@ class UserSchoolInfo(SchoolOut, table=True):
     )
     # Modified date
     modified_at: datetime = Field(
-        default=None,
-        sa_column=Column(TIMESTAMP(timezone=True), nullable=True),
+        sa_column=Column(
+            TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=text("CURRENT_TIMESTAMP"),
+        ),
+        default_factory=datetime.utcnow,
     )
     __table_args__ = (UniqueConstraint("user_id", name="uq_user_id"),)
-
-    users: "Users" = Relationship(back_populates="school_info")

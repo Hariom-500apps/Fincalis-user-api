@@ -10,7 +10,6 @@ from sqlmodel import (
     Column,
     Field,
     text,
-    Relationship,
     UniqueConstraint,
 )
 
@@ -26,8 +25,8 @@ class Company(SQLModel):
     # Official email
     office_email: EmailStr = Field(default=None, max_length=100, nullable=False)
 
-    # Office id
-    office_id: str = Field(default=None, max_length=50, nullable=False)
+    # Salary
+    salary: float = Field(default=None, nullable=False)
 
     # Work experience
     work_exp: float = Field(default=None, nullable=False)
@@ -39,7 +38,7 @@ class Company(SQLModel):
     company_address: str = Field(default=None, max_length=200, nullable=False)
 
     # Pin code
-    pincode: str = Field(default=None, max_length=10, nullable=False)
+    pincode: int = Field(default=None, nullable=False)
 
 
 class CompanyIn(Company):
@@ -56,6 +55,8 @@ class CompanyOut(CompanyIn):
         index=True,
         nullable=False,
     )
+    # User status
+    is_active: bool = Field(default=True)
 
 
 class UserCompanyInfo(CompanyOut, table=True):
@@ -66,7 +67,7 @@ class UserCompanyInfo(CompanyOut, table=True):
     # Id
     id: Optional[int] = Field(default=None, index=True, primary_key=True)
 
-    # Creation date of company details
+    # Creation date
     created_at: datetime = Field(
         sa_column=Column(
             TIMESTAMP(timezone=True),
@@ -76,12 +77,13 @@ class UserCompanyInfo(CompanyOut, table=True):
         default_factory=datetime.utcnow,
     )
 
-    # Modified date of company details
+    # Modified date
     modified_at: datetime = Field(
-        default=None,
-        sa_column=Column(TIMESTAMP(timezone=True), nullable=True),
+        sa_column=Column(
+            TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=text("CURRENT_TIMESTAMP"),
+        ),
+        default_factory=datetime.utcnow,
     )
     __table_args__ = (UniqueConstraint("user_id", name="uq_user_id"),)
-
-    users: "Users" = Relationship(back_populates="company_info")
-    nature: "BusinessNature" = Relationship(back_populates="company_nature_info")

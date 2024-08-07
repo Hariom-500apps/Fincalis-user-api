@@ -1,21 +1,24 @@
-"""Business type model"""
+"""User notifications model"""
 
+import uuid as uuid_pkg
 from typing import Optional
 from datetime import datetime
 from sqlmodel import Field, TIMESTAMP, text, Column, SQLModel
-import uuid as uuid_pkg
 
 
-class BusinessTypeIn(SQLModel):
+class Notification(SQLModel):
 
-    # Business type name
-    name: str = Field(default=None, nullable=False)
+    # Notification content
+    content: str = Field(default=None, nullable=False)
 
-    # Business status
-    is_active: bool = Field(default=True)
+    # Read status
+    is_read: bool = Field(default=False, nullable=False)
+
+    # Return on investment
+    address: str = Field(default=None, max_length=1000)
 
 
-class BusinessTypeOut(BusinessTypeIn):
+class NotificationOut(Notification):
     # UUID
     uid: uuid_pkg.UUID = Field(
         default_factory=uuid_pkg.uuid4,
@@ -24,15 +27,14 @@ class BusinessTypeOut(BusinessTypeIn):
     )
 
 
-class BusinessType(BusinessTypeOut, table=True):
+class Notifications(NotificationOut, table=True):
     # Table name
-    # __tablename__ = "business_type"
-    __tablename__ = "business_types"
+    __tablename__ = "notifications"
 
     # Id
     id: Optional[int] = Field(default=None, index=True, primary_key=True)
 
-    # Creation date of company details
+    # Creation date
     created_at: datetime = Field(
         sa_column=Column(
             TIMESTAMP(timezone=True),
@@ -42,7 +44,7 @@ class BusinessType(BusinessTypeOut, table=True):
         default_factory=datetime.utcnow,
     )
 
-    # Modified date of company details
+    # Modified date
     modified_at: datetime = Field(
         sa_column=Column(
             TIMESTAMP(timezone=True),

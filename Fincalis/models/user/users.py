@@ -14,16 +14,15 @@ from sqlmodel import (
     text,
     UniqueConstraint,
     Enum,
-    Relationship,
 )
 
 
 class UserType(str, enum.Enum):
     """User type"""
 
-    User = "user"
-    Staff = "staff"
-    Admin = "admin"
+    user = "user"
+    staff = "staff"
+    admin = "admin"
 
 
 class User(SQLModel):
@@ -43,10 +42,9 @@ class UserIn(User):
     # Mobile number of the user
     mobile: str = Field(default=None, max_length=10, min_length=10, nullable=False)
 
-    user_type: UserType = Field(default=None, sa_column=Column(Enum(UserType)))
+    user_type: UserType = Field(default=UserType.user, sa_column=Column(Enum(UserType)))
 
-    # User status
-    is_active: bool = Field(default=True)
+    
 
     email_verified: bool = Field(default=False)
 
@@ -60,6 +58,9 @@ class UserOut(UserIn):
         nullable=False,
     )
 
+    # User status
+    is_active: bool = Field(default=True)
+
 
 class Users(UserOut, table=True):
 
@@ -72,6 +73,9 @@ class Users(UserOut, table=True):
     is_superuser: bool = Field(default=False)
     is_admin: bool = Field(default=False)
     is_blocked: bool = Field(default=False)
+    is_staff: bool = Field(default=False)
+    password: str = Field(default=None, max_length=255, nullable=True)
+    fcm_token :str = Field(default=None, max_length=255)
 
     # Creation date of User
     created_at: datetime = Field(
@@ -84,8 +88,12 @@ class Users(UserOut, table=True):
     )
 
     modified_at: datetime = Field(
-        default=None,
-        sa_column=Column(TIMESTAMP(timezone=True), nullable=True),
+        sa_column=Column(
+            TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=text("CURRENT_TIMESTAMP"),
+        ),
+        default_factory=datetime.utcnow,
     )
 
     __table_args__ = (
@@ -93,7 +101,7 @@ class Users(UserOut, table=True):
         UniqueConstraint("email", name="uq_email"),
         UniqueConstraint("mobile", name="uq_mobile"),
     )
-    personal_info: "UserPersonalInfo" = Relationship(back_populates="users")
-    company_info: "UserCompanyInfo" = Relationship(back_populates="users")
-    business_info: "UserBusinessInfo" = Relationship(back_populates="users")
-    school_info: "UserSchoolInfo" = Relationship(back_populates="users")
+    # personal_info: "UserPersonalInfo" = Relationship(back_populates="users")
+    # company_info: "UserCompanyInfo" = Relationship(back_populates="users")
+    # business_info: "UserBusinessInfo" = Relationship(back_populates="users")
+    # school_info: "UserSchoolInfo" = Relationship(back_populates="users")

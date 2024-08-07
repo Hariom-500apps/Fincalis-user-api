@@ -3,12 +3,13 @@
 from typing import Optional
 from pydantic import ValidationError
 from sqlmodel import SQLModel, select as _select
+
+from util import response
 from sqlalchemy.engine.row import Row
 from sqlalchemy import and_
 from sqlalchemy.orm import load_only
-from Fincalis.util import response
-
 from datetime import datetime
+
 
 
 def serialize_row(row: Row) -> dict:
@@ -17,30 +18,28 @@ def serialize_row(row: Row) -> dict:
 
 
 def load_only_columns(
-    query: _select,
-    entity: SQLModel,
-    columns: Optional[list] = None,
-):
-    """Load only will show selected columns"""
-    load_only_columns = [getattr(entity, field) for field in columns]
+        query: _select,
+        entity: SQLModel,
+        columns: Optional[list] = None,
+    ):
+        """Load only will show selected columns"""
+        load_only_columns = [getattr(entity, field) for field in columns]
 
-    query = query.with_entities(*load_only_columns)
-    return query
+        query = query.with_entities(*load_only_columns)
+        return query
 
 
 async def get_all(db_model, db, message, columns=None, filters=None):
     try:
         query = db.query(db_model)
-
+        
         if filters:
-            filter_conditions = [
-                getattr(db_model, key) == value for key, value in filters.items()
-            ]
+            filter_conditions = [getattr(db_model, key) == value for key, value in filters.items()]
             query = query.filter(and_(*filter_conditions))
-
+        
         if columns:
             query = load_only_columns(query, db_model, columns)
-
+        
         data_obj = query.all()
 
         if not data_obj:
@@ -67,8 +66,8 @@ async def get_single(db_model, db, id, level=False, columns=None):
             query = query.options(load_only(*column_attributes))
 
         data_obj = query.first()
-        if hasattr(data_obj, "dob"):
-            data_obj.dob = data_obj.dob.strftime("%d-%m-%Y")
+        if hasattr(data_obj, 'dob'):
+            data_obj.dob= data_obj.dob.strftime("%d-%m-%Y")
 
         if not data_obj:
             message = "Data not found"
@@ -104,12 +103,12 @@ async def update_single(item_id, model_input, db_model, db, message, level=False
         if not db_item:
             message = "Item not found"
             return response(message, 404, 0)
-
+        
         if isinstance(model_input, dict):
             input_data = model_input
         else:
             input_data = model_input.dict(exclude_unset=True)
-        input_data["modified_at"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        input_data["modified_at"]= datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
         for key, value in input_data.items():
             setattr(db_item, key, value)

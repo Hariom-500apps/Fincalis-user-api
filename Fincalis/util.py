@@ -9,7 +9,6 @@ class Response(BaseModel):
     data: dict
     settings: dict
 
-
 ALLOWED_IMAGE_TYPES = [
     "image/jpeg",
     "image/png",

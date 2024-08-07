@@ -3,7 +3,6 @@
 import uuid as uuid_pkg
 from typing import Optional
 from datetime import datetime
-
 from sqlmodel import Column, Field, SQLModel, TIMESTAMP, text
 
 
@@ -21,9 +20,6 @@ class UserReferenceIN(SQLModel):
     # Reference mobile
     mobile: str = Field(default=None, min_length=10, max_length=10, nullable=False)
 
-    # Reference status
-    is_active: bool = Field(default=True)
-
 
 class UserReferenceOut(UserReferenceIN):
 
@@ -34,10 +30,13 @@ class UserReferenceOut(UserReferenceIN):
         nullable=False,
     )
 
+    # Reference status
+    is_active: bool = Field(default=True)
+
 
 class UserReferenceIfo(UserReferenceOut, table=True):
 
-    __tablename__ = "user_reference_info"
+    __tablename__ = "user_references"
 
     id: Optional[int] = Field(default=None, index=True, primary_key=True)
 
@@ -52,6 +51,10 @@ class UserReferenceIfo(UserReferenceOut, table=True):
     )
     # Last modification date
     modified_at: datetime = Field(
-        default=None,
-        sa_column=Column(TIMESTAMP(timezone=True), nullable=True),
+        sa_column=Column(
+            TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=text("CURRENT_TIMESTAMP"),
+        ),
+        default_factory=datetime.utcnow,
     )

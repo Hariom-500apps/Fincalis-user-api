@@ -15,12 +15,11 @@ DB_USERNAME = os.getenv("DB_USERNAME")
 DB_PASSWORD = os.getenv("DB_PASSWORD")
 DB_HOST = os.getenv("DB_HOST")
 DB_NAME = os.getenv("DB_NAME")
-
-
+DB_PORT=  os.getenv("DB_PORT")
 
 # Create the engine using environment variables
 engine = create_engine(
-    f"mysql+pymysql://{DB_USERNAME}:{DB_PASSWORD}@{DB_HOST}/{DB_NAME}",
+    f"mysql+pymysql://{DB_USERNAME}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}",
     echo=True  # Set to True to see SQL statements being executed, False to disable
 )
 

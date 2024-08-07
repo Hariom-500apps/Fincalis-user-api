@@ -1,21 +1,37 @@
-"""Business nature model"""
+"""User's ticket details"""
 
+import enum
+import uuid as uuid_pkg
 from typing import Optional
 from datetime import datetime
-from sqlmodel import Field, TIMESTAMP, text, Column, SQLModel
-import uuid as uuid_pkg
+
+from sqlmodel import Column, Field, SQLModel, TIMESTAMP, text, Enum, TEXT
 
 
-class BusinessNatureIn(SQLModel):
+class Status(str, enum.Enum):
+    """Ticket status"""
 
-    # Business nature name
-    name: str = Field(default=None, nullable=False)
-
-    # Business status
-    is_active: bool = Field(default=True)
+    open = "open"
+    closed = "closed"
 
 
-class BusinessNatureOut(BusinessNatureIn):
+class TicketIN(SQLModel):
+
+    # User id
+    user_id: int = Field(default=None, foreign_key="users.id")
+
+    # Ticket title
+    title: str = Field(default=None, max_length=50, nullable=False)
+
+    # Ticket description
+    description: str = Field(default=None, sa_column=Column(TEXT))
+
+    # Ticket status
+    status: Status = Field(default=None, sa_column=(Enum(Status)))
+
+
+class TicketOut(TicketIN):
+
     # UUID
     uid: uuid_pkg.UUID = Field(
         default_factory=uuid_pkg.uuid4,
@@ -24,11 +40,10 @@ class BusinessNatureOut(BusinessNatureIn):
     )
 
 
-class BusinessNature(BusinessNatureOut, table=True):
-    # Table name
-    __tablename__ = "business_natures"
+class TicketIfo(TicketOut, table=True):
 
-    # Id
+    __tablename__ = "tickets"
+
     id: Optional[int] = Field(default=None, index=True, primary_key=True)
 
     # Creation date
@@ -40,8 +55,7 @@ class BusinessNature(BusinessNatureOut, table=True):
         ),
         default_factory=datetime.utcnow,
     )
-
-    # Modified date
+    # Last modification date
     modified_at: datetime = Field(
         sa_column=Column(
             TIMESTAMP(timezone=True),

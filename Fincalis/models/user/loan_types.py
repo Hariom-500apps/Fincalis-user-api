@@ -1,9 +1,9 @@
 """Loan type model"""
 
+import uuid as uuid_pkg
 from typing import Optional
 from datetime import datetime
 from sqlmodel import Field, TIMESTAMP, text, Column, SQLModel
-import uuid as uuid_pkg
 
 
 class LoanTypeIn(SQLModel):
@@ -61,6 +61,10 @@ class LoanType(LoanTypeOut, table=True):
 
     # Modified date
     modified_at: datetime = Field(
-        default=None,
-        sa_column=Column(TIMESTAMP(timezone=True), nullable=True),
+        sa_column=Column(
+            TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=text("CURRENT_TIMESTAMP"),
+        ),
+        default_factory=datetime.utcnow,
     )
