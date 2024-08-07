@@ -10,7 +10,6 @@ from sqlmodel import (
     Field,
     text,
     SQLModel,
-    Relationship,
     UniqueConstraint,
 )
 from sqlalchemy import Column
@@ -31,7 +30,7 @@ class Business(SQLModel):
     annual_income: float = Field(default=None, nullable=False)
 
     # Pin code
-    pincode: str = Field(default=None, max_length=10, nullable=False)
+    pincode: int = Field(default=None, nullable=False)
 
     # Registration type
     registration_type_id: int = Field(default=None, foreign_key="business_types.id")
@@ -39,13 +38,11 @@ class Business(SQLModel):
     # Nature of business
     nature_of_business_id: int = Field(default=None, foreign_key="business_natures.id")
 
-    # User status
-    is_active: bool = Field(default=True)
-
 
 class BusinessIn(Business):
     # User id
     user_id: int = Field(default=None, foreign_key="users.id")
+
 
 class BusinessInOut(BusinessIn):
 
@@ -55,9 +52,13 @@ class BusinessInOut(BusinessIn):
         index=True,
         nullable=False,
     )
+    # User status
+    is_active: bool = Field(default=True)
 
 
 class UserBusinessInfo(BusinessInOut, table=True):
+
+    # __tablename__ = "user_business_info"
 
     __tablename__ = "business_details"
 
@@ -74,10 +75,12 @@ class UserBusinessInfo(BusinessInOut, table=True):
     )
 
     modified_at: datetime = Field(
-        default=None,
-        sa_column=Column(TIMESTAMP(timezone=True), nullable=True),
+        sa_column=Column(
+            TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=text("CURRENT_TIMESTAMP"),
+        ),
+        default_factory=datetime.utcnow,
     )
 
     __table_args__ = (UniqueConstraint("user_id", name="uq_user_id"),)
-
-    users: "Users" = Relationship(back_populates="business_info")

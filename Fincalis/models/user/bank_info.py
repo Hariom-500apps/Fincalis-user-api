@@ -6,10 +6,9 @@ from datetime import datetime
 from sqlmodel import TIMESTAMP, text
 
 from sqlmodel import SQLModel, Field, Column
-from pydantic import BaseModel
 
 
-class BankIn(BaseModel):
+class BankIn(SQLModel):
 
     # Name of the bank
     bank_name: str = Field(default=None, max_length=200, nullable=False)
@@ -35,11 +34,13 @@ class BankOut(BankIn):
         index=True,
         nullable=False,
     )
+    # Status
+    is_active: bool = Field(default=True)
 
 
 class UserBankInfo(BankOut, SQLModel, table=True):
 
-    __tablename__ = "user_bank_info"
+    __tablename__ = "bank_infos"
 
     # Id
     id: Optional[int] = Field(default=None, index=True, primary_key=True)
@@ -55,6 +56,10 @@ class UserBankInfo(BankOut, SQLModel, table=True):
     )
     # Modified date
     modified_at: datetime = Field(
-        default=None,
-        sa_column=Column(TIMESTAMP(timezone=True), nullable=True),
+        sa_column=Column(
+            TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=text("CURRENT_TIMESTAMP"),
+        ),
+        default_factory=datetime.utcnow,
     )

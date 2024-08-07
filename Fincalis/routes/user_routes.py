@@ -6,12 +6,11 @@ import json
 import math
 import mimetypes
 import shutil
+import os
 import logging
 from datetime import datetime
-from pydantic import BaseModel
-from sqlalchemy.orm import Session
-from dateutil.relativedelta import relativedelta
-
+from pydantic import BaseModel,EmailStr
+from sqlmodel import select
 from fastapi import (
     APIRouter,
     Depends,
@@ -21,36 +20,45 @@ from fastapi import (
     BackgroundTasks,
     Form,
 )
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+from dateutil.relativedelta import relativedelta
+
+from ..base_jwt import JWTBearer
+from ..db import get_db
+
+from ..models.user.basic_details import Basic, BasicIn, UserPersonalInfo
+from ..models.user.company_details import Company, CompanyIn, UserCompanyInfo
+from ..models.user.business_details import Business, BusinessIn, UserBusinessInfo
+from ..models.user.school_details import School, SchoolIn, UserSchoolInfo
+from ..models.user.business_types import BusinessType, BusinessTypeIn
+from ..models.user.business_natures import BusinessNature
+from ..models.user.loan_types import  LoanType
+from ..models.user.loans import UserLoanInfo
+from ..models.user.loan_applications import LoanApplicationInfo, LoanApplication
+from ..models.user.user_references import UserReferenceIfo, UserReferenceIN
+from ..models.user.tickets import TicketIfo, TicketIN, Status as ticket_Status
+from ..models.user.signup_levels import SignupLevelInfo, SignupLevelIn
+from ..models.user.user_consents import UserConsentIN, UserConsentIfo
+from ..models.user.user_contacts import UserContactIN, UserContactIfo
+from ..models.user.users import Users
+from ..models.user.bank_info import UserBankInfo
+from ..models.user.login_histories import LoginHistory, LoginHistoryIN
+from ..models.user.bank_npci import NPCIBank
+from ..models.user.loan_repayments import LoanRepaymentInfo
 
 
-from Fincalis.models.user.personal_info import Basic, BasicIn, UserPersonalInfo
-from Fincalis.models.user.company_info import Company, CompanyIn, UserCompanyInfo
-from Fincalis.models.user.business_info import Business, BusinessIn, UserBusinessInfo
-from Fincalis.models.user.school_info import School, SchoolIn, UserSchoolInfo
-from Fincalis.models.user.business_types import BusinessType
-from Fincalis.models.user.business_natures import BusinessNature
-from Fincalis.models.user.loan_type import LoanType
-from Fincalis.models.user.user_loan import UserLoanInfo
-from Fincalis.models.user.loan_application import LoanInfo, Loan
-from Fincalis.models.user.user_reference import UserReferenceIfo, UserReferenceIN
-from Fincalis.models.user.ticket import TicketIfo, TicketIN, Status as ticket_Status
-from Fincalis.models.user.signup_level import SignupLevelInfo, SignupLevelIn
-from Fincalis.models.user.user_consent import UserConsentIN, UserConsentIfo
-from Fincalis.models.user.user_contact import UserContactIN, UserContactIfo
-from Fincalis.models.user.bank_info import UserBankInfo
-from Fincalis.models.user.users import Users, User
 
-from Fincalis.util import response, ALLOWED_IMAGE_TYPES, sort_emi_dates
-from Fincalis.base_jwt import JWTBearer
-from Fincalis.db import get_db
-from Fincalis.api_crud import get_all, create_new, get_single, update_single
+from ..util import response, ALLOWED_IMAGE_TYPES, sort_emi_dates
+from ..api_crud import get_all, create_new, get_single, update_single
 from os import environ
 from dotenv import load_dotenv
 
+
 load_dotenv()
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
-logger = logging.getLogger(__name__)
 
 # Define the directory where files will be saved
 UPLOAD_DIRECTORY = "Upload"
@@ -59,11 +67,12 @@ os.makedirs(UPLOAD_DIRECTORY, exist_ok=True)
 background_tasks = BackgroundTasks()
 
 username = environ.get("TRUTH_SCREEN_USERNAME")
-
 CASE_FREE_CLIENT_ID_PROD = environ.get("CASE_FREE_CLIENT_ID_PROD")
 CASE_FREE_CLIENT_SECRET_PROD = environ.get("CASE_FREE_CLIENT_SECRET_PROD")
 CASE_FREE_SIGNATURE_PROD = environ.get("CASE_FREE_SIGNATURE_PROD")
-tenure = 9
+tenure = environ.get("TENURE")
+LOAN_NO = environ.get("LOAN_NO")
+
 
 def background_signup_level(
     response_data, background_tasks, db, input_field, operation
@@ -80,7 +89,7 @@ def background_signup_level(
     except Exception as exc:
         msg = f"background_signup_level exception {str(exc)}"
         logger.exception(msg)
-
+        response(str(exc), 0, 404)
 
 def kyc_background_signup_level(user_id, background_tasks, db, input_field):
     try:
@@ -88,21 +97,20 @@ def kyc_background_signup_level(user_id, background_tasks, db, input_field):
     except Exception as exc:
         msg = f"kyc_background_signup_level exception {str(exc)}"
         logger.exception(msg)
-
+        response(str(exc), 0, 404)
 
 def encrypt_decrypt_api(headers, endpoint, payload):
-    try:
-        url = "https://www.truthscreen.com/v1/apicall"
-        url = f"{url}/{endpoint}"
-        result = requests.request("POST", url, headers=headers, data=payload)
-        return result.text
-    except Exception as exc:
-        msg = f"kyc_background_signup_level exception {str(exc)}"
-        logger.exception(msg)
+
+    url = "https://www.truthscreen.com/v1/apicall"
+    url = f"{url}/{endpoint}"
+    result = requests.request("POST", url, headers=headers, data=payload)
+    return result.text
 
 
 async def get_loan_details(user_id: str, db: Session):
-    loan_obj = await get_single(LoanInfo, db, user_id, level=True, columns=["loan_id", "loan_approved"])
+    loan_obj = await get_single(
+        LoanApplicationInfo, db, user_id, level=True, columns=["loan_id", "loan_approved"]
+    )
     loan_type = loan_obj.data["result"].loan_id
     loan_approved = loan_obj.data["result"].loan_approved
 
@@ -121,30 +129,42 @@ async def get_loan_details(user_id: str, db: Session):
     }
 
 
-@router.post("/basic", tags=["user"])
+@router.post("/basic")
 async def basic_user_details(
+    email:EmailStr,
+    full_name:str,
     user: BasicIn,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     token_data: BaseModel = Depends(JWTBearer()),
 ):
+    try:
+        message = "Basic user's details added successfully"
+        basic_info = await create_new(user, UserPersonalInfo, db, message)
+        if basic_info.data["result"]:
+            user_id = basic_info.data["result"].user_id
+            update_input = {
+                "email": email,
+                "full_name": full_name
+            }
+            background_tasks.add_task(update_single, int(user_id), update_input, Users,db, "message")
+            input_field = {
+                "is_basic_completed": True,
+                "provision_status": basic_info.data["result"].profession,
+            }
+            background_signup_level(
+                basic_info.data["result"], background_tasks, db, input_field, "create"
+            )
 
-    message = "Basic user's details added successfully"
-    basic_info = await create_new(user, UserPersonalInfo, db, message)
-
-    if basic_info.data["result"]:
-        input_field = {
-            "is_basic_completed": True,
-            "provision_status": basic_info.data["result"].profession,
-        }
-        background_signup_level(
-            basic_info.data["result"], background_tasks, db, input_field, "create"
-        )
-
-    return basic_info
+        return basic_info.settings
+    except Exception as exc:
+        msg = f"get bank name {str(exc)}"
+        logger.exception(msg)
+        response(str(exc), 0, 404)
 
 
-@router.put("/basic", tags=["user"])
+
+@router.put("/basic")
 async def update_basic_user_details(
     user_id: str,
     update_input: Basic,
@@ -152,13 +172,13 @@ async def update_basic_user_details(
     token_data: BaseModel = Depends(JWTBearer()),
 ):
     message = "Basic details updated successful"
-
-    return await update_single(
+    response_obj = await update_single(
         user_id, update_input, UserPersonalInfo, db, message, level=True
     )
+    return response_obj.settings
 
 
-@router.post("/company", tags=["user"])
+@router.post("/company")
 async def user_company_details(
     company_input: CompanyIn,
     background_tasks: BackgroundTasks,
@@ -177,10 +197,10 @@ async def user_company_details(
             company_response.data["result"], background_tasks, db, input_field, "update"
         )
 
-    return company_response
+    return company_response.settings
 
 
-@router.put("/company", tags=["user"])
+@router.put("/company")
 async def update_user_company_details(
     user_id: str,
     update_input: Company,
@@ -188,13 +208,13 @@ async def update_user_company_details(
     token_data: BaseModel = Depends(JWTBearer()),
 ):
     message = "Company details updated successful"
-
-    return await update_single(
+    response_obj = await update_single(
         user_id, update_input, UserCompanyInfo, db, message, level=True
     )
+    return response_obj.settings
 
 
-@router.post("/business", tags=["user"])
+@router.post("/business")
 async def user_business_details(
     business_input: BusinessIn,
     db: Session = Depends(get_db),
@@ -204,7 +224,6 @@ async def user_business_details(
     message = "User's business details added successfully"
 
     business_response = await create_new(business_input, UserBusinessInfo, db, message)
-
     if business_response.data["result"]:
         input_field = {"is_work_completed": True}
 
@@ -215,10 +234,10 @@ async def user_business_details(
             input_field,
             "update",
         )
-    return business_response
+    return business_response.settings
 
 
-@router.put("/business", tags=["user"])
+@router.put("/business")
 async def update_user_business_details(
     user_id: str,
     update_input: Business,
@@ -226,13 +245,21 @@ async def update_user_business_details(
     token_data: BaseModel = Depends(JWTBearer()),
 ):
     message = "Business details updated successful"
-
-    return await update_single(
+    response_obj= await update_single(
         user_id, update_input, UserBusinessInfo, db, message, level=True
     )
+    return response_obj.settings
 
 
-@router.post("/consent", tags=["user"])
+@router.post("/business/type")
+async def business_type(business_input: BusinessTypeIn, db: Session = Depends(get_db)):
+
+    message = "Business type added successfully"
+
+    return await create_new(business_input, BusinessType, db, message)
+
+
+@router.post("/consent")
 async def user_consent(
     business_input: UserConsentIN,
     db: Session = Depends(get_db),
@@ -241,7 +268,8 @@ async def user_consent(
 
     message = "User consent added successfully"
 
-    return await create_new(business_input, UserConsentIfo, db, message)
+    response_obj= await create_new(business_input, UserConsentIfo, db, message)
+    return response_obj.settings
 
 
 # @router.post("/signup/level")
@@ -249,10 +277,10 @@ async def create_signup_level(
     signup_level_input: SignupLevelIn, db: Session = Depends(get_db)
 ):
 
-    return await create_new(signup_level_input, SignupLevelInfo, db, "message")
+    response_obj=await create_new(signup_level_input, SignupLevelInfo, db, "message")
+    return response_obj.settings
 
-
-@router.get("/signup/level", tags=["user"])
+@router.get("/signup/level")
 async def get_signup_level(
     user_id: str,
     db: Session = Depends(get_db),
@@ -262,36 +290,49 @@ async def get_signup_level(
     return await get_single(SignupLevelInfo, db, user_id, level=True)
 
 
-@router.put("/profile/image")
-async def upload_profile_image(
-    user_id: str = Form(...),
-    file: UploadFile = File(...),
+@router.get("/bank/name")
+async def get_bank_name(
+    db: Session = Depends(get_db),
+    token_data: BaseModel = Depends(JWTBearer()),
+):
+    return await get_all(NPCIBank, db, "Bank list", columns=["bank_name"])
+
+
+@router.put("/profile")
+async def update_profile(
+    user_id: str,
+    email: str = None,
+    full_name: str = None,
+    profile_img: UploadFile = File(None),
     db: Session = Depends(get_db),
     token_data: BaseModel = Depends(JWTBearer()),
 ):
     try:
+        update_input = {}
+        if profile_img:
+            if profile_img.content_type not in ALLOWED_IMAGE_TYPES:
+                message = "Invalid file type. Only image files are allowed."
+                return response(message, 0, 400)
 
-        if file.content_type not in ALLOWED_IMAGE_TYPES:
-            message = "Invalid file type. Only image files are allowed."
-            return response(message, 0, 400)
+            new_filename = f"{user_id}_profile_{profile_img.filename}"
+            file_path = os.path.join(UPLOAD_DIRECTORY, new_filename)
 
-        new_filename = f"{user_id}_profile_{file.filename}"
-        file_path = os.path.join(UPLOAD_DIRECTORY, new_filename)
+            with open(file_path, "wb") as buffer:
+                shutil.copyfileobj(profile_img.file, buffer)
+                update_input["image"] = file_path
+        if email:
+            update_input["email"] = email
+        if full_name:
+            update_input["full_name"] = full_name
 
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+        message = "Profile updated successful"
 
-        update_input = {"image": file_path}
-        message = "Profile image updated successful"
-
-        return await update_single(user_id, update_input, Users, db, message)
-    
+        response_obj = await update_single(user_id, update_input, Users, db, message)
+        return response_obj.settings
     except Exception as exc:
-
         msg = f"user loan status exception {str(exc)}"
         logger.exception(msg)
-
-        return response(str(exc), 0, 404)
+        response(str(exc), 0, 404)        
 
 
 @router.get("/profile")
@@ -303,18 +344,17 @@ async def get_user_profile(
     return await get_single(Users, db, user_id)
 
 
-@router.put("/profile")
-async def update_user_profile(
+@router.get("/contacts")
+async def get_user_contacts(
     user_id: str,
-    user_input: User,
     db: Session = Depends(get_db),
     token_data: BaseModel = Depends(JWTBearer()),
 ):
-    message = "Users details updated successful"
+    column = ["contact_json"]
+    return await get_single(UserContactIfo, db, user_id, level=True, columns=column)
 
-    return await update_single(user_id, user_input, Users, db, message)
 
-@router.post("/contact", tags=["user"])
+@router.post("/contact")
 async def upload_contact(
     user_id: str,
     contact_json: UploadFile = File(...),
@@ -323,36 +363,46 @@ async def upload_contact(
 ):
     try:
         if contact_json.content_type != "application/json":
-
             raise HTTPException(
-                status_code=400,
-                detail="Invalid file type. Only JSON files are accepted.",
+                status_code=400, detail="Invalid file type. Only JSON files are accepted."
             )
+        new_filename = f"{user_id}_pan_{contact_json.filename}"
+        file_path = os.path.join(UPLOAD_DIRECTORY, new_filename)
 
-        contact_json_content = await contact_json.read()
-        contact_input = UserContactIN(
-            user_id=user_id, contact_json=contact_json_content
-        )
+        with open(file_path, "wb") as buffer:
+            shutil.copyfileobj(contact_json.file, buffer)
+
+        # contact_json_content = await contact_json.read()
+        contact_input = UserContactIN(user_id=user_id, contact_json=file_path)
         message = "User contacts added successfully"
 
-        return await create_new(contact_input, UserContactIfo, db, message)
+        response_obj =  await create_new(contact_input, UserContactIfo, db, message)
+        return response_obj.settings
     except Exception as exc:
-        msg = f"user loan status exception {str(exc)}"
+        msg = f"upload contact exception {str(exc)}"
         logger.exception(msg)
-        return response(str(exc), 0, 404)
+        response(str(exc), 0, 404)    
 
-
-@router.get("/basic", tags=["user"])
+@router.get("/basic")
 async def get_user_basic_info(
     user_id: str,
     db: Session = Depends(get_db),
     token_data: BaseModel = Depends(JWTBearer()),
 ):
 
-    return await get_single(UserPersonalInfo, db, user_id, level=True)
+    response_obj=  await get_single(UserPersonalInfo, db, user_id, level=True)
+    if response_obj.data["result"]:
+        profile_response = await get_single(Users, db, user_id, columns=["email","full_name"])
+        user_response = dict(profile_response.data["result"])
+        user_response.pop("id", None)  
+
+        result = {**dict(response_obj.data["result"]), **user_response}
+        response_obj.data["result"]= result
+        return response_obj
+    return response("Data not found",0,400)
 
 
-@router.get("/company", tags=["user"])
+@router.get("/company")
 async def get_user_company_info(
     user_id: str,
     db: Session = Depends(get_db),
@@ -362,7 +412,7 @@ async def get_user_company_info(
     return await get_single(UserCompanyInfo, db, user_id, level=True)
 
 
-@router.get("/business", tags=["user"])
+@router.get("/business")
 async def get_user_business_info(
     user_id: str,
     db: Session = Depends(get_db),
@@ -372,7 +422,7 @@ async def get_user_business_info(
     return await get_single(UserBusinessInfo, db, user_id, level=True)
 
 
-@router.get("/reference", tags=["user"])
+@router.get("/reference")
 async def get_user_reference_info(
     user_id: str,
     db: Session = Depends(get_db),
@@ -382,7 +432,7 @@ async def get_user_reference_info(
     return await get_all(UserReferenceIfo, db, user_id, filters=filters)
 
 
-@router.get("/tickets", tags=["user"])
+@router.get("/tickets")
 async def get_user_ticket_info(
     user_id: str,
     status: ticket_Status,
@@ -393,7 +443,7 @@ async def get_user_ticket_info(
     return await get_all(TicketIfo, db, user_id, filters=filters)
 
 
-@router.get("/school", tags=["user"])
+@router.get("/school")
 async def get_user_school_info(
     user_id: str,
     db: Session = Depends(get_db),
@@ -407,45 +457,58 @@ async def get_user_school_info(
 async def update_signup_level(
     user_id: str, signup_level_input: SignupLevelIn, db: Session = Depends(get_db)
 ):
-    return await update_single(
+    response_obj= await update_single(
         user_id, signup_level_input, SignupLevelInfo, db, "message", level=True
     )
+    return response_obj.settings
 
 
-@router.get("/registration/type", tags=["user"])
+@router.get("/registration/type")
 async def registration_type(
     db: Session = Depends(get_db),
     token_data: BaseModel = Depends(JWTBearer()),
 ):
-    columns = ["name", "id"]
-    message = "Loan type retried successfully"
+    try:
+        columns = ["name", "id"]
+        message = "Loan type retried successfully"
 
-    return await get_all(BusinessType, db, message, columns)
+        response_obj = await get_all(BusinessType, db, message, columns)
+        result = {item["id"]: item["name"] for item in response_obj.data["result"]}
+        response_obj.data["result"] = result
+        return response_obj
+    except Exception as exc:
+        msg = f"get registration type exception {str(exc)}"
+        logger.exception(msg)
+        response(str(exc), 0, 404)
 
-
-@router.get("/business/nature", tags=["user"])
+@router.get("/business/nature")
 async def business_nature(
     db: Session = Depends(get_db),
     token_data: BaseModel = Depends(JWTBearer()),
 ):
-    columns = ["name", "id"]
-    message = "Loan type retried successfully"
+    try:
+        columns = ["name", "id"]
+        message = "Loan type retried successfully"
 
-    return await get_all(BusinessNature, db, message, columns)
+        response_obj = await get_all(BusinessNature, db, message, columns)
+        result = {item["id"]: item["name"] for item in response_obj.data["result"]}
+        response_obj.data["result"] = result
+        return response_obj
+    except Exception as exc:
+        msg = f"kyc_background_signup_level exception {str(exc)}"
+        logger.exception(msg)
+        response(str(exc), 0, 404)
 
-
-@router.get("/loan/type", tags=["user"])
+@router.get("/loan/type")
 async def loan_type(
     db: Session = Depends(get_db),
     token_data: BaseModel = Depends(JWTBearer()),
 ):
-    columns = ["name"]
     message = "Loan type retried successfully"
+    return await get_all(LoanType, db, message)
 
-    return await get_all(LoanType, db, message, columns)
 
-
-@router.get("/loan/status", tags=["user"])
+@router.get("/loan/status")
 async def user_loan_status(
     user_id: int,
     db: Session = Depends(get_db),
@@ -456,8 +519,8 @@ async def user_loan_status(
         field = UserLoanInfo.id if loan_info_id else UserLoanInfo.loan_status
         result = (
             db.query(field)
-            .join(LoanInfo, LoanInfo.id == UserLoanInfo.loan_application)
-            .filter(LoanInfo.user_id == user_id)
+            .join(LoanApplicationInfo, LoanApplicationInfo.id == UserLoanInfo.loan_application)
+            .filter(LoanApplicationInfo.user_id == user_id)
             .first()
         )
         if result is None:
@@ -467,35 +530,34 @@ async def user_loan_status(
         message = "Loan status fetch successful"
         return response(message, 1, 200, data=data)
     except Exception as exc:
-        msg = f"user loan status exception {str(exc)}"
-        logger.exception(msg)
-        return response(str(exc), 0, 404)
+        response(str(exc), 0, 404)
 
 
-@router.post("/select/loan/type", tags=["user"])
+@router.post("/select/loan/type")
 async def select_loan_type(
-    loan_input: Loan,
+    loan_input: LoanApplication,
     background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     token_data: BaseModel = Depends(JWTBearer()),
 ):
     try:
-        response_obj = await get_single(LoanInfo, db, loan_input.user_id, level=True)
+        response_obj = await get_single(LoanApplicationInfo, db, loan_input.user_id, level=True)
         if response_obj.data["result"]:
             message = "Loan type updated successfully"
             response_obj = await update_single(
                 response_obj.data["result"].user_id,
                 loan_input,
-                LoanInfo,
+                LoanApplicationInfo,
                 db,
                 message,
                 level=True,
             )
+        
         else:
 
             message = "Loan type added successfully"
 
-            response_obj = await create_new(loan_input, LoanInfo, db, message)
+            response_obj = await create_new(loan_input, LoanApplicationInfo, db, message)
             if response_obj.data["result"]:
                 input_user_loan = {"loan_application": response_obj.data["result"].id}
                 background_tasks.add_task(
@@ -505,10 +567,9 @@ async def select_loan_type(
     except Exception as exc:
         msg = f"select loan type exception {str(exc)}"
         logger.exception(msg)
-        return response(str(exc), 0, 404)
+        response(str(exc), 0, 404)
 
-
-@router.post("/school", tags=["user"])
+@router.post("/school")
 async def user_school_details(
     user: SchoolIn,
     db: Session = Depends(get_db),
@@ -524,10 +585,10 @@ async def user_school_details(
         background_signup_level(
             school_response.data["result"], background_tasks, db, input_field, "update"
         )
-    return school_response
+    return school_response.settings
 
 
-@router.put("/school", tags=["user"])
+@router.put("/school")
 async def update_user_school_details(
     user_id: str,
     update_input: School,
@@ -535,12 +596,13 @@ async def update_user_school_details(
     token_data: BaseModel = Depends(JWTBearer()),
 ):
     message = "School details updated successful"
-    return await update_single(
+    response_obj= await update_single(
         user_id, update_input, UserSchoolInfo, db, message, level=True
     )
+    return response_obj.settings
 
 
-@router.post("/reference", tags=["user"])
+@router.post("/reference")
 async def user_reference(
     reference_input: UserReferenceIN,
     db: Session = Depends(get_db),
@@ -549,11 +611,12 @@ async def user_reference(
 
     message = "User reference added successfully"
 
-    return await create_new(reference_input, UserReferenceIfo, db, message)
+    response_obj= await create_new(reference_input, UserReferenceIfo, db, message)
+    return response_obj.settings
 
 
-@router.post("/ticket", tags=["user"])
-async def user_reference(
+@router.post("/ticket")
+async def raise_ticket(
     ticket_input: TicketIN,
     db: Session = Depends(get_db),
     token_data: BaseModel = Depends(JWTBearer()),
@@ -561,66 +624,108 @@ async def user_reference(
 
     message = "User ticket raised successfully"
 
-    return await create_new(ticket_input, TicketIfo, db, message)
+    response_obj =  await create_new(ticket_input, TicketIfo, db, message)
+    return response_obj.settings
 
 
-@router.get("/loan/overview", tags=["user"])
+@router.post("/login/history")
+async def user_login_history(
+    login_history: LoginHistoryIN,
+    db: Session = Depends(get_db),
+    token_data: BaseModel = Depends(JWTBearer()),
+):
+
+    message = "User login history added successfully"
+
+    response_obj= await create_new(login_history, LoginHistory, db, message)
+    return response_obj.settings
+
+
+@router.get("/emi/breakup")
+async def get_emi_breakup(
+    user_id: str,
+    db: Session = Depends(get_db),
+    token_data: BaseModel = Depends(JWTBearer()),
+):
+    try:
+        loan_id_info = await get_single(UserLoanInfo,db,user_id,level=True,columns=["id"])
+        loan_id = loan_id_info.data["result"].id
+        filters = {"is_paid":0,"loan_id":loan_id}
+        emi_response = await get_all(LoanRepaymentInfo,db,"Found data",["date","amount"],filters=filters)
+
+        if emi_response.data["result"]:
+
+            return emi_response
+        else:
+            message = "User loan not found"
+            return response(message, 0, 404)
+
+    except Exception as exc:
+        msg = f"user emi breakup exception {str(exc)}"
+        logger.exception(msg)
+        return response(str(exc), 0, 404)
+
+
+@router.get("/loan/overview")
 async def get_loan_overview(
     user_id: str,
     db: Session = Depends(get_db),
     token_data: BaseModel = Depends(JWTBearer()),
 ):
     try:
-        columns = ["id", "loan_required"]
-        response_obj = await get_single(
-            LoanInfo, db, user_id, level=True, columns=columns
+        
+        loan_application_info = await get_single(LoanApplicationInfo,db,user_id,level=True, columns=["loan_required"])
+
+        loans_info =await get_single(UserLoanInfo,db,user_id,level=True, columns=["loan_no"])
+        loan_app_info =dict(loan_application_info.data["result"])
+
+        query = (
+            select(
+                LoanRepaymentInfo.date,
+                LoanRepaymentInfo.amount,
+            )
+            .where(LoanRepaymentInfo.loan_id == loans_info.data["result"].id)
         )
+        result = db.execute(query)
+        results = result.fetchone()
+       
+        message = "No loan information found"
+        if results is None:
+            return response(message, 0, 404)
+        if results:
+            # Extract the required information
+            emi_value = results[1]
+            loan_id = loans_info.data["result"].loan_no
+            loan_required = loan_app_info["loan_required"]
 
-        user_loan_info_id = await user_loan_status(
-            user_id, db, token_data, loan_info_id=True
-        )
+            # Construct the response object
+            response_obj = {
+                "loan_required": loan_required,
+                "loan_id": loan_id,
+                "emi_date": "2nd Every Month",
+                "emi_value": emi_value,
+            }
 
-        lon_info_id = user_loan_info_id.data["result"]["loan_status"]
+            return response("Found loan data", 1, 200, data=response_obj)
+        return response(message, 0, 404)
 
-        columns = ["repayment_months"]
-        loan_info_response = await get_single(
-            UserLoanInfo, db, lon_info_id, columns=columns
-        )
-
-        emi_dict = loan_info_response.data["result"].repayment_months
-        emi_value = next(iter(emi_dict.values()))
-
-        output_response = dict(response_obj.data["result"])
-        output_response["emi_value"] = emi_value
-        output_response["emi_date"] = "2nd Every Month"
-
-        response_obj.data["result"] = output_response
-        return response_obj
     except Exception as exc:
-        msg = f"loan overview exception {str(exc)}"
-        logger.exception(msg)
-
         return response(str(exc), 0, 400)
 
 
-@router.get("/loan/application/info", tags=["user"])
+@router.get("/loan/application/info")
 async def get_loan_application_info(
     user_id: str,
     db: Session = Depends(get_db),
     token_data: BaseModel = Depends(JWTBearer()),
 ):
-    try:
-        loan_details = await get_loan_details(user_id, db)
-        message = "Loan application details"
+    loan_details = await get_loan_details(user_id, db)
+    message = "Loan application details"
 
-        return response(message, 1, 200, loan_details)
-    except Exception as exc:
-        msg = f"loan application info exception {str(exc)}"
-        logger.exception(msg)
-        return response(str(exc), 0, 400)
+    return response(message, 1, 200, loan_details)
+from typing import List
 
-
-@router.post("/loan/application", tags=["user"])
+@router.post("/loan/application")
 async def user_loan_application(
     loan_amount: int,
     user_id: str,
@@ -628,64 +733,93 @@ async def user_loan_application(
     db: Session = Depends(get_db),
     token_data: BaseModel = Depends(JWTBearer()),
 ):
-    try:
-        loan_details = await get_loan_details(user_id, db)
-    
-        total_loan_amount = loan_amount + loan_details["processing_fee"] + loan_details["gateway_fee"] + loan_details["additional_fee"]
-        loan_input = {
-            "loan_required": total_loan_amount,
-        }
 
-        background_tasks.add_task(
-            update_single, user_id, loan_input, LoanInfo, db, "message", level=True
+    loan_details = await get_loan_details(user_id, db)
+
+    total_loan_amount = (
+        loan_amount
+        + loan_details["processing_fee"]
+        + loan_details["gateway_fee"]
+        + loan_details["additional_fee"]
+    )
+    loan_input = {
+        "loan_required": total_loan_amount,
+    }
+    background_tasks.add_task(
+        update_single, user_id, loan_input, LoanApplicationInfo, db, "message", level=True
+    )
+    monthly_emi = math.ceil(total_loan_amount/float(tenure))
+    current_date = datetime.now()
+
+    if current_date.day > 2:
+        # Move to the next month first
+        start_date = (current_date.replace(day=1) + relativedelta(months=1)).replace(
+            day=2
         )
+    else:
+        start_date = current_date.replace(day=2)
 
-        monthly_emi = math.ceil((total_loan_amount) / tenure)
-        current_date = datetime.now()
+    emi_dates = {}
+    for i in range(int(tenure)):
+        emi_date = start_date + relativedelta(months=i)
+        emi_dates[emi_date.strftime("%d-%b-%Y")] = monthly_emi
 
-        if current_date.day > 2:
-            # Move to the next month first
-            start_date = (
-                current_date.replace(day=1) + relativedelta(months=1)
-            ).replace(day=2)
-        else:
-            start_date = current_date.replace(day=2)
+    sorted_emi_dates = sort_emi_dates(emi_dates)
 
-        emi_dates = {}
-        for i in range(tenure):
-            emi_date = start_date + relativedelta(months=i)
-            emi_dates[emi_date.strftime("%d-%b-%Y")] = monthly_emi
-
-        sorted_emi_dates = sort_emi_dates(emi_dates)
+    emi_dates_list = []
+    for i in range(int(9)):
+        emi_date = start_date + relativedelta(months=i)
+        emi_dates_list.append(emi_date.strftime("%Y-%m-%d"))
+        emi_date = emi_date + relativedelta(months=1)
         
-        update_loan_info = {"repayment_months": sorted_emi_dates}
-        user_loan_info_id = await user_loan_status(
-            user_id, db, token_data, loan_info_id=True
+    user_loan_info_id = await get_single(UserLoanInfo,db,user_id,level=True,columns=["id"])
+    lon_info_id = dict(user_loan_info_id)["data"]["result"].id
+
+    max_loan_no = db.query(func.max(UserLoanInfo.loan_no)).filter(UserLoanInfo.loan_no.like(f'{LOAN_NO[:4]}%')).scalar()
+
+    if max_loan_no:
+
+        loan_no = max_loan_no
+        new_loan_no = loan_no[:-5] + f"{int(loan_no[-5:]) + 1:05}"
+    else:
+        new_loan_no = LOAN_NO
+    update_input = {
+        "loan_no": new_loan_no
+    }
+    background_tasks.add_task(
+            update_single, user_id, update_input, UserLoanInfo,db, "message", level=True
+
         )
-        lon_info_id = user_loan_info_id.data["result"]["loan_status"]
-        background_tasks.add_task(
-            update_single, lon_info_id, update_loan_info, UserLoanInfo, db, "message"
-        )
-        message = "EMI calculated successfully"
-        data = {
-            "tenure": f"{tenure} Months",
-            "total_loan_amount":total_loan_amount,
-            "loan_approved": loan_details["loan_approved"],
-            "processing_fee": loan_details["processing_fee"],
-            "gateway_fee": loan_details["gateway_fee"],
-            "additional_fee": loan_details["additional_fee"],
-            "monthly emi": monthly_emi,
-            "emi_dates": sorted_emi_dates,
+   
+    for i in range (int(tenure)):
+        input_model = {
+            "loan_id":lon_info_id,"amount":monthly_emi, "date":emi_dates_list[i]
         }
 
-        return response(message, 1, 200, data)
-    except Exception as exc:
-        msg = f"loan application info exception {str(exc)}"
-        logger.exception(msg)
-        return response(str(exc), 0, 400)
+        background_tasks.add_task(
+            create_new,input_model, LoanRepaymentInfo,db, "message"
+
+        )
 
 
-@router.post("/upload/bank/statement", tags=["verification"])
+    message = "EMI calculated successfully"
+    data = {
+        "tenure": f"{tenure} Months",
+        "total_loan_amount": total_loan_amount,
+        "loan_approved": loan_details["loan_approved"],
+        "processing_fee": loan_details["processing_fee"],
+        "gateway_fee": loan_details["gateway_fee"],
+        "additional_fee": loan_details["additional_fee"],
+        "monthly emi": monthly_emi,
+        "emi_dates": sorted_emi_dates,
+        "emi_repay_date": list(sorted_emi_dates.keys()),
+    }
+
+    response_obj =  response(message, 1, 200, data)
+    return response_obj
+
+
+@router.post("/upload/bank/statement")
 async def upload_bank_statement(
     background_tasks: BackgroundTasks,
     user_id: str = Form(...),
@@ -693,36 +827,37 @@ async def upload_bank_statement(
     db: Session = Depends(get_db),
     token_data: BaseModel = Depends(JWTBearer()),
 ):
-    try:
 
-        if file.content_type != "application/pdf":
-            message = "Invalid file type. Only PDF files are allowed."
-            return response(message, 0, 400)
+    if file.content_type != "application/pdf":
+        message = "Invalid file type. Only PDF files are allowed."
+        return response(message, 0, 400)
 
-        new_filename = f"{user_id}_bank_statement_{file.filename}"
-        file_path = os.path.join(UPLOAD_DIRECTORY, new_filename)
+    new_filename = f"{user_id}_bank_statement_{file.filename}"
+    file_path = os.path.join(UPLOAD_DIRECTORY, new_filename)
 
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(file.file, buffer)
+    with open(file_path, "wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
 
-        update_input = {"statement": file_path}
-        message = "Bank statement added successfully"
-        response_obj = await update_single(
-            user_id, update_input, LoanInfo, db, "message", level=True
-        )
+    update_input = {"statement": file_path}
+    message = "Bank statement added successfully"
+    response_obj = await update_single(
+        user_id, update_input, LoanApplicationInfo, db, "message", level=True
+    )
 
-        if response_obj.data["result"]:
-            input_field = {"is_document_completed": True}
-            kyc_background_signup_level(user_id, background_tasks, db, input_field)
+    if response_obj.data["result"]:
+        input_field = {"is_document_completed": True}
+        update_input = {
+              "loan_status" :"under_review"
+        }
+        user_loan_info_id = await get_single(UserLoanInfo,db,user_id,level=True,columns=["id"])
+        lon_info_id = dict(user_loan_info_id)["data"]["result"].id
+        background_tasks.add_task(update_single, lon_info_id,update_input,UserLoanInfo,db,"message")
+        kyc_background_signup_level(user_id, background_tasks, db, input_field)
 
-        return response_obj
-    except Exception as exc:
-        msg = f"loan application info exception {str(exc)}"
-        logger.exception(msg)
-        return response(str(exc), 0, 400)
+    return response_obj.settings
 
 
-@router.post("/verify/bank", tags=["verification"])
+@router.post("/verify/bank",tags=["verification"])
 async def verify_Bank(
     user_id: str,
     account_number: str,
@@ -746,11 +881,8 @@ async def verify_Bank(
 
         bank_response = requests.post(url, json=payload, headers=headers)
         bank_obj = json.loads(bank_response.text)
-
         if bank_response.status_code == 200:
-
             if bank_obj["account_status"] == "VALID":
-
                 bank_input = {
                     "bank_name": bank_obj["bank_name"],
                     "account_no": account_number,
@@ -758,15 +890,12 @@ async def verify_Bank(
                     "user_id": user_id,
                     "account_holder_name": bank_obj["name_at_bank"],
                 }
-
                 background_tasks.add_task(
                     create_new, bank_input, UserBankInfo, db, "message"
                 )
-
                 message = "Bank verification successful"
-
-                return response(message, 1, 200, data=bank_obj)
-
+                response_obj= response(message, 1, 200, data=bank_obj)
+                return response_obj.settings
             return response(bank_obj["account_status_code"], 0, 400)
 
         return response(
@@ -774,41 +903,36 @@ async def verify_Bank(
         )
 
     except Exception as exc:
-
-        msg = f"loan application info exception {str(exc)}"
+        msg = f"verify bank exception {str(exc)}"
         logger.exception(msg)
+        response(str(exc), 0, 404)
 
-        return response(str(exc), 0, 400)
 
 
-@router.get("/bank/statement", tags=["verification"])
+@router.get("/bank/statement")
 async def get_bank_statement(
     user_id: int,
     db: Session = Depends(get_db),
     token_data: BaseModel = Depends(JWTBearer()),
 ):
+    # Fetch the pdf record
     try:
         columns = ["statement"]
-        statement_response = await get_single(
-            LoanInfo, db, user_id, level=True, columns=columns
-        )
+        pdf_response = await get_single(LoanApplicationInfo, db, user_id, level=True, columns=columns)
 
-        if statement_response.data["result"]:
-            file_path = statement_response.data["result"].statement
+        if pdf_response.data["result"]:
+            # Decode Base64 to binary data
+            file_path = pdf_response.data["result"].statement
             if os.path.exists(file_path):
-                message = "Statement found"
-                data = {"bank_statement": file_path}
-                return response(message, 1, 200, data)
+                return response("Found bank statement", 1, 200, pdf_response)
 
-        message = "Bank statement not found"
-        return response(message, 0, 400)
-
+        return response("Bank statement not found", 0, 404)
     except Exception as exc:
-
-        msg = f"bank statement exception {str(exc)}"
+        msg = f"get bank statement exception {str(exc)}"
         logger.exception(msg)
+        response(str(exc), 0, 404)
 
-        return response(str(exc), 0, 400)
+
 
 
 @router.post("/pan/image", tags=["verification"])
@@ -821,7 +945,6 @@ async def upload_pan_image(
 ):
     try:
         if file.content_type not in ALLOWED_IMAGE_TYPES:
-
             message = "Invalid file type. Only image files are allowed."
             return response(message, 0, 400)
 
@@ -835,19 +958,17 @@ async def upload_pan_image(
         await update_single(
             user_id, update_input, UserPersonalInfo, db, "message", level=True
         )
-
         message = "Image uploaded successfully"
         response_obj = response(message, 1, 201, file.filename)
-
         if response_obj.data["result"]:
             input_field = {"is_pan_image_uploaded": True}
             kyc_background_signup_level(user_id, background_tasks, db, input_field)
 
-        return response_obj
+        return response_obj.settings
     except Exception as exc:
-        msg = f"pan image exception {str(exc)}"
+        msg = f"upload pan image exception {str(exc)}"
         logger.exception(msg)
-        return response(str(exc), 0, 400)
+        response(str(exc), 0, 404)
 
 
 @router.get("/kyc/details", tags=["verification"])
@@ -857,31 +978,31 @@ async def get_kyc_details(
     token_data: BaseModel = Depends(JWTBearer()),
 ):
     try:
-        kyc_result = await get_single(
+        img_result = await get_single(
             UserPersonalInfo,
             db,
             user_id,
             level=True,
-            columns=["pan_image", "pan", "aadhaar"],
+            columns=["pan_image", "pan", "aadhar"],
         )
-        if kyc_result.data["result"]:
-            file_path = kyc_result.data["result"].pan_image
-            if os.path.exists(file_path):
-                message = "PAN image found"
-                data = {
-                    "pan_img_path": file_path,
-                    "pan": kyc_result.data["result"].pan,
-                    "adhaar": kyc_result.data["result"].aadhaar,
-                }
-                return response(message, 1, 200, data)
+        if img_result.data["result"]:
+            data = {
+                "pan": img_result.data["result"].pan,
+                "adhaar": img_result.data["result"].aadhar,
+            }
+            file_path = img_result.data["result"].pan_image
+            if file_path and os.path.exists(file_path):
+                data["pan_img_path"] = file_path
+            message = "Kyc details found"
+
+            return response(message, 1, 200, data)
 
         message = "No KYC details found for the given user id"
         return response(message, 0, 404)
-
     except Exception as exc:
-        msg = f"pan image exception {str(exc)}"
+        msg = f"get kyc details exception {str(exc)}"
         logger.exception(msg)
-        return response(str(exc), 0, 404)
+        response(str(exc), 0, 404)
 
 
 @router.post("/verify/pan/number", tags=["verification"])
@@ -892,6 +1013,7 @@ async def verify_pan_number(
     db: Session = Depends(get_db),
     token_data: BaseModel = Depends(JWTBearer()),
 ):
+
     try:
         url = "https://www.truthscreen.com/v1/apicall/nid/panComprehensive"
 
@@ -910,9 +1032,9 @@ async def verify_pan_number(
 
         decrypt_response = json.loads(decrypt_response)
         if decrypt_response["status"] == 1:
+            # return json.loads(decrypt_response)
 
             pan_response = response(message, 1, 200, decrypt_response)
-
             if pan_response.data["result"]:
                 update_input = {"pan": pan_number}
                 await update_single(
@@ -921,18 +1043,15 @@ async def verify_pan_number(
 
                 input_field = {"is_pan_verified": True}
                 kyc_background_signup_level(user_id, background_tasks, db, input_field)
-
-            return pan_response
+            return pan_response.settings
         return response(
             decrypt_response["msg"], 0, decrypt_response["status"], decrypt_response
         )
 
     except Exception as exc:
-
-        msg = f"verify pan number exception {str(exc)}"
+        msg = f"pan verify exception {str(exc)}"
         logger.exception(msg)
-
-        return response(str(exc), 0, 400)
+        response(str(exc), 0, 404)
 
 
 @router.post("/verify/aadhaar/number", tags=["verification"])
@@ -960,15 +1079,13 @@ async def verify_aadhaar_number(
 
         if decrypt_response["status"] == 1:
             return response(message, 1, 200, decrypt_response)
-
         return response(
             decrypt_response["msg"], 0, decrypt_response["status"], decrypt_response
         )
     except Exception as exc:
-        msg = f"verify pan number exception {str(exc)}"
+        msg = f"send aadhar otp exception {str(exc)}"
         logger.exception(msg)
-
-        return response(str(exc), 0, 400)
+        response(str(exc), 0, 404)
 
 
 @router.post("/verify/aadhaar/otp", tags=["verification"])
@@ -998,7 +1115,6 @@ async def verify_aadhaar_otp(
         result = requests.post(url, data=payload, headers=headers)
         decrypt_response = encrypt_decrypt_api(headers, "decrypt", result.text)
         decrypt_response = json.loads(decrypt_response)
-
         if decrypt_response["status"] == 1:
 
             message = "Adhaar verified successful"
@@ -1011,16 +1127,16 @@ async def verify_aadhaar_otp(
             await update_single(
                 user_id, update_input, UserPersonalInfo, db, "message", level=True
             )
-            # return json.loads(decrypt_response)
+
             return response(message, 1, 200, decrypt_response)
+        
         return response(
             decrypt_response["msg"], 0, decrypt_response["status"], decrypt_response
         )
     except Exception as exc:
-        msg = f"verify pan number exception {str(exc)}"
+        msg = f"verify aadhar otp exception {str(exc)}"
         logger.exception(msg)
-
-        return response(str(exc), 0, 400)
+        response(str(exc), 0, 404)
 
 
 @router.post("/liveness", tags=["verification"])
@@ -1029,7 +1145,6 @@ async def verify_liveness(
     token_data: BaseModel = Depends(JWTBearer()),
 ):
     try:
-
         liveness_token_url = "https://www.truthscreen.com/liveness/token"
         boundary = ""
         transID = "12345"
@@ -1060,10 +1175,8 @@ async def verify_liveness(
         headers_encrypt = {"username": username, "content-type": "application/json"}
         decrypt_response = encrypt_decrypt_api(headers_encrypt, "decrypt", result.text)
 
-        print("decrypt token response->", decrypt_response)
         decrypt_response = json.loads(decrypt_response)
         if decrypt_response["status"] != 1:
-            print("Error:", decrypt_response["msg"])
             return decrypt_response["msg"]
 
         secretToken = decrypt_response["msg"]["secretToken"]
@@ -1113,53 +1226,45 @@ async def verify_liveness(
         decrypt_response = encrypt_decrypt_api(headers_encrypt, "decrypt", result.text)
 
         decrypt_response = json.loads(decrypt_response)
-
         if decrypt_response["result"] != "Real":
             return response(decrypt_response["result"], 0, 400, decrypt_response)
 
         return response(decrypt_response["result"], 1, 200, decrypt_response)
-
     except Exception as exc:
-
-        msg = f"verify pan number exception {str(exc)}"
+        msg = f"liveness verification exception {str(exc)}"
         logger.exception(msg)
-
-        return response(str(exc), 0, 400)
+        response(str(exc), 0, 404)
 
 
 @router.post("/credit", tags=["verification"])
 async def credit_otp(
-    email: str,
-    pan: str,
-    mobile: str,
-    first_name: str,
-    last_name: str,
-    dob: str,
-    address: str,
-    city: str,
-    state: str,
-    pincode: str,
-    gender: str = "Male",
+    user_id: str,
+    db: Session = Depends(get_db),
     token_data: BaseModel = Depends(JWTBearer()),
 ):
     try:
+        basic_info = await get_single(UserPersonalInfo, db, user_id, level=True)
+        user_info = await get_single(Users, db, user_id)
+        basic_details = dict(basic_info.data["result"])
+        user_details = dict(user_info.data["result"])
         headers = {"username": username, "content-type": "application/json"}
 
+        full_name = user_details["full_name"].split(" ")
         otp_generation_payload = json.dumps(
             {
                 "transID": "123",
                 "docType": 45,
-                "email": email,
-                "mobileNumber": mobile,
-                "firstName": first_name,
-                "lastName": last_name,
-                "dob": dob,
-                "gender": gender,
-                "address": address,
-                "city": city,
-                "state": state,
-                "pinCode": pincode,
-                "pan": pan,
+                "email": user_details["email"],
+                "mobileNumber": user_details["mobile"],
+                "firstName": full_name[0],
+                "lastName": full_name[1],
+                "dob": str(basic_details["dob"]),
+                "gender": str(basic_details["gender"])[7:],
+                "address": "Hyderabad",
+                "city": "Hyderabad",
+                "state": "Telangana",
+                "pinCode": "500016",
+                "pan": basic_details["pan"],
             }
         )
 
@@ -1173,23 +1278,17 @@ async def credit_otp(
 
         response = requests.post(otp_generation_url, data=payload, headers=headers)
         decrypt_payload = encrypt_decrypt_api(headers, "decrypt", response.text)
-
         return json.loads(decrypt_payload)
-
     except Exception as exc:
-
-        msg = f"verify pan number exception {str(exc)}"
+        msg = f"create otp for credit report exception {str(exc)}"
         logger.exception(msg)
-
-        return response(str(exc), 0, 400)
+        response(str(exc), 0, 404)
 
 
 @router.post("/credit/otp/verification", tags=["verification"])
 async def credit_otp_verification(
     otp: str,
     tsTransID: str,
-    verifyotp: int = 1,
-    resendotp: int = 0,
     token_data: BaseModel = Depends(JWTBearer()),
 ):
     try:
@@ -1205,8 +1304,8 @@ async def credit_otp_verification(
                 "docType": 45,
                 "tsTransID": tsTransID,
                 "otp": otp,
-                "verifyotp": verifyotp,
-                "resendotp": resendotp,
+                "verifyotp": 1,
+                "resendotp": 0,
             }
         )
 
@@ -1217,16 +1316,14 @@ async def credit_otp_verification(
         decrypt_response = encrypt_decrypt_api(headers, "decrypt", result.text)
 
         decrypt_response = json.loads(decrypt_response)
-
         if decrypt_response["status"] == 1:
-            return response(decrypt_response["result"], 1, 200, decrypt_response)
-
-        return response(
-            decrypt_response["msg"], 0, decrypt_response["status"], decrypt_response
-        )
+            return response(
+                "Credit score report generated", 1, 200, decrypt_response["msg"]["data"]
+            )
+        return response("No Record Found!.", 0, decrypt_response["status"])
 
     except Exception as exc:
-        msg = f"verify pan number exception {str(exc)}"
+        msg = f"verify credit otp exception {str(exc)}"
         logger.exception(msg)
+        response(str(exc), 0, 404)
 
-        return response(str(exc), 0, 400)

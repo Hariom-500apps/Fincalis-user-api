@@ -4,10 +4,10 @@ import uuid as uuid_pkg
 from typing import Optional
 from datetime import datetime
 
-from sqlmodel import Column, Field, SQLModel, TIMESTAMP, text
+from sqlmodel import Column, Field, SQLModel, TIMESTAMP, text, UniqueConstraint
 
 
-class Loan(SQLModel):
+class LoanApplication(SQLModel):
 
     # User id
     user_id: int = Field(default=None, foreign_key="users.id")
@@ -16,7 +16,7 @@ class Loan(SQLModel):
     loan_id: int = Field(default=None, foreign_key="loan_types.id")
 
 
-class LoanIn(Loan):
+class LoanApplicationIn(LoanApplication):
 
     # Loan amount
     loan_required: float = Field(default=None, nullable=True)
@@ -24,11 +24,8 @@ class LoanIn(Loan):
     # Cibil score
     cibil: Optional[int] = Field(default=None, nullable=True)
 
-    # Loan status
-    is_active: bool = Field(default=True)
 
-
-class LoanOut(LoanIn):
+class LoanApplicationOut(LoanApplicationIn):
 
     # UUID
     uid: uuid_pkg.UUID = Field(
@@ -37,6 +34,9 @@ class LoanOut(LoanIn):
         nullable=False,
     )
 
+    # Loan status
+    is_active: bool = Field(default=True)
+
     # Loan approved
     loan_approved: float = Field(default=None, nullable=True)
 
@@ -44,7 +44,7 @@ class LoanOut(LoanIn):
     statement: str = Field(default=None, nullable=True)
 
 
-class LoanInfo(LoanOut, table=True):
+class LoanApplicationInfo(LoanApplicationOut, table=True):
 
     __tablename__ = "loan_applications"
 
@@ -61,6 +61,11 @@ class LoanInfo(LoanOut, table=True):
     )
     # Last modification date
     modified_at: datetime = Field(
-        default=None,
-        sa_column=Column(TIMESTAMP(timezone=True), nullable=True),
+        sa_column=Column(
+            TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=text("CURRENT_TIMESTAMP"),
+        ),
+        default_factory=datetime.utcnow,
     )
+    __table_args__ = (UniqueConstraint("user_id", name="uq_user_id"),)

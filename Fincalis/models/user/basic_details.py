@@ -23,15 +23,15 @@ from sqlmodel import (
 class MaritalStatus(str, enum.Enum):
     """Marital Status"""
 
-    Single = "Single"
-    Married = "Married"
+    single = "single"
+    married = "married"
 
 
 class Gender(str, enum.Enum):
     """Gender Status"""
 
-    Male = "Male"
-    Female = "Female"
+    male = "male"
+    female = "female"
 
 
 class LoanPurpose(str, enum.Enum):
@@ -46,46 +46,43 @@ class LoanPurpose(str, enum.Enum):
 class Profession(str, enum.Enum):
     """Profession"""
 
-    Employee = "Employee"
-    Student = "Student"
-    Business = "Business"
+    employee = "employee"
+    student = "student"
+    business = "business"
 
 
 class Basic(SQLModel):
 
-    # Full name
-    full_name: str = Field(default=None, max_length=50, nullable=False)
-
     # Father's name
-    fathers_name: str = Field(default=None, max_length=50, nullable=False)
+    father_name: str = Field(default=None, max_length=50, nullable=False)
 
     # Mother's name
-    mothers_name: str = Field(default=None, max_length=50, nullable=False)
+    mother_name: str = Field(default=None, max_length=50, nullable=False)
 
     # Date of birth
     dob: date = Field(default=None, nullable=False)
 
     # Marital status
     marital_status: MaritalStatus = Field(
-        default=MaritalStatus.Single, sa_column=Column(Enum(MaritalStatus))
+        default=MaritalStatus.single, sa_column=Column(Enum(MaritalStatus))
     )
 
     # Address
     address: str = Field(default=None, max_length=500, nullable=False)
 
     # Pin code
-    pincode: str = Field(default=None, max_length=10, nullable=False)
+    pincode: int = Field(default=None, nullable=False)
 
     # Gender
     gender: Gender = Field(default=None, sa_column=Column(Enum(Gender)))
 
     # Loan purpose
-    loan_purpose: LoanPurpose = Field(default=None, sa_column=Column(Enum(LoanPurpose)))
+    # loan_purpose: LoanPurpose = Field(default=None, sa_column=Column(Enum(LoanPurpose)))
 
     # Profession
     profession: Profession = Field(default=None, sa_column=Column(Enum(Profession)))
 
-    # user_id: int = Field(foreign_key="users.id")
+    # verified_status:bool=Field(default=False)
 
     @validator("dob", pre=True)
     def parse_date(cls, value):
@@ -97,9 +94,10 @@ class Basic(SQLModel):
                     pass
             raise ValueError("Date format should be either DD-MM-YYYY or DD/MM/YYYY")
         return value
+
     @property
     def formatted_dob(self) -> str:
-        return self.dob.strftime('%d-%m-%Y')
+        return self.dob.strftime("%d-%m-%Y")
 
 
 class BasicIn(Basic):
@@ -117,15 +115,20 @@ class BasicOut(BasicIn):
         nullable=False,
     )
 
+    # User status
+    is_active: bool = Field(default=True)
+
+    # verified_status:bool= Field(default=False)
+
 
 class UserPersonalInfo(BasicOut, table=True):
 
-    __tablename__ = "user_personal_details"
+    __tablename__ = "user_details"
 
     id: Optional[int] = Field(default=None, index=True, primary_key=True)
 
-    # Aadhaar number
-    aadhaar: str = Field(default=None, max_length=12, nullable=True)
+    # Aadhar number
+    aadhar: str = Field(default=None, max_length=12, nullable=True)
 
     # PAN number
     pan: str = Field(default=None, max_length=11, nullable=True)
@@ -133,10 +136,10 @@ class UserPersonalInfo(BasicOut, table=True):
     # Pan image
     pan_image: str = Field(default=None, nullable=True)
 
-    @field_validator("aadhaar")
+    @field_validator("aadhar")
     def check_aadhar(cls, v):
         if not v.isdigit() or len(v) != 12:
-            raise ValueError("Aadhaar number must be a 12-digit numeric string")
+            raise ValueError("Aadhar number must be a 12-digit numeric string")
         return v
 
     @field_validator("pan")
@@ -157,9 +160,11 @@ class UserPersonalInfo(BasicOut, table=True):
     )
 
     modified_at: datetime = Field(
-        default=None,
-        sa_column=Column(TIMESTAMP(timezone=True), nullable=True),
+        sa_column=Column(
+            TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=text("CURRENT_TIMESTAMP"),
+        ),
+        default_factory=datetime.utcnow,
     )
     __table_args__ = (UniqueConstraint("user_id", name="uq_user_id"),)
-
-    users: "Users" = Relationship(back_populates="personal_info")

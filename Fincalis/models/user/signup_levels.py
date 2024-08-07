@@ -8,17 +8,11 @@ from sqlmodel import TIMESTAMP, Column, Field, text, SQLModel, UniqueConstraint,
 from sqlalchemy import Column
 
 
-class Kyc(SQLModel):
-    is_pan_verified: bool = Field(default=False)
-    is_adhaar_verified: bool = Field(default=False)
-    is_pan_image_verified: bool = Field(default=False)
-
-
 class Provision(str, enum.Enum):
 
-    Employee = "Employee"
-    Student = "Student"
-    Business = "Business"
+    employee = "employee"
+    student = "student"
+    business = "business"
 
 
 class SignupLevelIn(SQLModel):
@@ -40,9 +34,6 @@ class SignupLevelIn(SQLModel):
     # Pan image uploaded status
     is_pan_image_uploaded: bool = Field(default=False, nullable=True)
 
-    # Kyc info status
-    is_kyc_completed: bool = Field(default=False, nullable=True)
-
     # Document info status
     is_document_completed: bool = Field(default=False, nullable=True)
 
@@ -58,11 +49,13 @@ class SignupLevelInOut(SignupLevelIn):
         index=True,
         nullable=False,
     )
+    # status
+    is_active: bool = Field(default=True)
 
 
 class SignupLevelInfo(SignupLevelInOut, table=True):
 
-    __tablename__ = "signup_level_info"
+    __tablename__ = "signup_levels"
 
     id: Optional[int] = Field(default=None, index=True, primary_key=True)
 
@@ -77,7 +70,11 @@ class SignupLevelInfo(SignupLevelInOut, table=True):
     )
 
     modified_at: datetime = Field(
-        default=None,
-        sa_column=Column(TIMESTAMP(timezone=True), nullable=True),
+        sa_column=Column(
+            TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=text("CURRENT_TIMESTAMP"),
+        ),
+        default_factory=datetime.utcnow,
     )
     __table_args__ = (UniqueConstraint("user_id", name="uq_user_id"),)

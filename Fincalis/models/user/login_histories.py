@@ -1,38 +1,44 @@
-"""Business type model"""
+"""User login history model"""
 
+import uuid as uuid_pkg
 from typing import Optional
 from datetime import datetime
 from sqlmodel import Field, TIMESTAMP, text, Column, SQLModel
-import uuid as uuid_pkg
 
 
-class BusinessTypeIn(SQLModel):
+class LoginHistoryIN(SQLModel):
 
-    # Business type name
-    name: str = Field(default=None, nullable=False)
+    # User id
+    user_id: int = Field(default=None, foreign_key="users.id")
 
-    # Business status
-    is_active: bool = Field(default=True)
+    # Loan status
+    latitude: float = Field(default=None, nullable=False)
+
+    # Limit
+    longitude: float = Field(default=None, nullable=False)
+
+    # Return on investment
+    address: str = Field(default=None, max_length=1000)
 
 
-class BusinessTypeOut(BusinessTypeIn):
+class LoginHistoryOut(LoginHistoryIN):
     # UUID
     uid: uuid_pkg.UUID = Field(
         default_factory=uuid_pkg.uuid4,
         index=True,
         nullable=False,
     )
+    is_active: bool = Field(default=True)
 
 
-class BusinessType(BusinessTypeOut, table=True):
+class LoginHistory(LoginHistoryOut, table=True):
     # Table name
-    # __tablename__ = "business_type"
-    __tablename__ = "business_types"
+    __tablename__ = "user_login_histories"
 
     # Id
     id: Optional[int] = Field(default=None, index=True, primary_key=True)
 
-    # Creation date of company details
+    # Creation date
     created_at: datetime = Field(
         sa_column=Column(
             TIMESTAMP(timezone=True),
@@ -42,7 +48,7 @@ class BusinessType(BusinessTypeOut, table=True):
         default_factory=datetime.utcnow,
     )
 
-    # Modified date of company details
+    # Modified date
     modified_at: datetime = Field(
         sa_column=Column(
             TIMESTAMP(timezone=True),

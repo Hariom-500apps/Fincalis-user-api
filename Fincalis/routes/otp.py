@@ -1,18 +1,17 @@
 """OTP Authorization"""
 
+from fastapi import APIRouter, Depends
 import logging
 import json
 import http.client
+from ..util import response
+from ..base_jwt import create_service_token
 from sqlalchemy.orm import Session
-from fastapi import APIRouter, Depends
-
-from Fincalis.util import response
-from Fincalis.base_jwt import create_service_token
-from Fincalis.models.user.users import Users
-from Fincalis.models.user.user_consent import UserConsentIfo
-from Fincalis.db import get_db
-from Fincalis.api_crud import create_new
-
+from ..models.user.users import Users
+from ..models.user.user_consents import UserConsentIfo
+from ..util import response
+from ..db import get_db
+from ..api_crud import create_new
 from os import environ
 from dotenv import load_dotenv
 
@@ -55,7 +54,9 @@ async def send(name: str, mobile: int):
 
 
 @router.post("/verify")
-async def verify(full_name: str, otp: int, mobile: int, db: Session = Depends(get_db)):
+async def verify(
+    full_name: str, otp: int, mobile: int, fcm_token: str, db: Session = Depends(get_db)
+):
     try:
         if len(str(mobile)) != 10:
             return response("Invalid mobile number", 0, 422)
@@ -68,10 +69,10 @@ async def verify(full_name: str, otp: int, mobile: int, db: Session = Depends(ge
         res = conn.getresponse()
         data = res.read()
         result = json.loads(data.decode("utf-8"))
-        user_consent_status = None
         if "error" == result["type"]:
             return response(result["message"], 0, 400)
         user_exist = db.query(Users).filter(Users.mobile == mobile).first()
+        user_consent_status = None
         if user_exist:
             if user_exist.email == None:
                 email = "dummy@gmail.com"
@@ -87,13 +88,16 @@ async def verify(full_name: str, otp: int, mobile: int, db: Session = Depends(ge
                 .first()
             )
         else:
-            payload = {"full_name": full_name, "mobile": str(mobile)}
+            payload = {
+                "full_name": full_name,
+                "mobile": str(mobile),
+                "fcm_token": fcm_token,
+            }
             response_obj = await create_new(payload, Users, db, message="")
             user_id = dict(response_obj.data["result"])["id"]
             jwt_token = create_service_token(
                 full_name, str(mobile), user_id, "dummy@gmail.com"
             )
-
         data = {
             "jwt_token": jwt_token,
             "user_id": user_id,

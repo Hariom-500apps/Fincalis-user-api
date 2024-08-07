@@ -1,19 +1,22 @@
 """Main file"""
 
+
 import time
 import logging
 
-from Fincalis.routes import otp, user_routes
+from .routes import user_routes ,otp, subscription
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.status import HTTP_422_UNPROCESSABLE_ENTITY
 
-# from Fincalis.db import create_db_tables
+# from .db import create_db_tables
 # create_db_tables()
 
 logger = logging.getLogger(__name__)
 app = FastAPI()
+
 
 DESCRIPTION = """
 Your Service 🚀
@@ -39,6 +42,13 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+logging.basicConfig(
+    level=logging.ERROR,  # Set the log level
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',  # Log message format
+    filename='app.log',  # Log file name
+    filemode='w'  # Write mode, use 'a' for append mode
+)
+
 
 @app.exception_handler(RequestValidationError)
 async def validation_exception_handler(request: Request, exc: RequestValidationError):
@@ -56,7 +66,6 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
         },
     )
 
-
 @app.middleware("http")
 async def add_process_time_header(request: Request, call_next):
     """Add process time"""
@@ -67,7 +76,16 @@ async def add_process_time_header(request: Request, call_next):
     response.headers["X-Process-Time"] = str(process_time)
     return response
 
+@app.get("/hello")
+def read_root():
+    try:
+        logger.exception(str("Hello"))
+        return {"Hello": "World"}
+    except Exception as exc:
+        logger.exception(str(exc))
+
 
 # Routes
 app.include_router(prefix="/user", router=user_routes.router)
 app.include_router(prefix="/otp", router=otp.router, tags=["OTP"])
+app.include_router(prefix="/subscription", router=subscription.router, tags=["Subscription"])

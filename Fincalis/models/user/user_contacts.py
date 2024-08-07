@@ -1,4 +1,4 @@
-"""User's consent details"""
+"""User's contact details"""
 
 import uuid as uuid_pkg
 from typing import Optional
@@ -7,16 +7,16 @@ from datetime import datetime
 from sqlmodel import Column, Field, SQLModel, TIMESTAMP, text, UniqueConstraint
 
 
-class UserConsentIN(SQLModel):
+class UserContactIN(SQLModel):
 
     # User id
     user_id: int = Field(default=None, foreign_key="users.id")
 
-    # Status
-    status: bool = Field(default=False)
+    # Contacts
+    contact_json: bytes = Field(default=None)
 
 
-class UserConsentOut(UserConsentIN):
+class UserContactOut(UserContactIN):
 
     # UUID
     uid: uuid_pkg.UUID = Field(
@@ -25,10 +25,12 @@ class UserConsentOut(UserConsentIN):
         nullable=False,
     )
 
+    is_active: bool = True
 
-class UserConsentIfo(UserConsentOut, table=True):
 
-    __tablename__ = "user_consent"
+class UserContactIfo(UserContactOut, table=True):
+
+    __tablename__ = "user_contacts"
 
     id: Optional[int] = Field(default=None, index=True, primary_key=True)
 
@@ -43,7 +45,11 @@ class UserConsentIfo(UserConsentOut, table=True):
     )
     # Last modification date
     modified_at: datetime = Field(
-        default=None,
-        sa_column=Column(TIMESTAMP(timezone=True), nullable=True),
+        sa_column=Column(
+            TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=text("CURRENT_TIMESTAMP"),
+        ),
+        default_factory=datetime.utcnow,
     )
     __table_args__ = (UniqueConstraint("user_id", name="uq_user_id"),)

@@ -1,36 +1,22 @@
-"""User's ticket details"""
+"""User's consent details"""
 
-import enum
 import uuid as uuid_pkg
 from typing import Optional
 from datetime import datetime
 
-from sqlmodel import Column, Field, SQLModel, TIMESTAMP, text, Enum, TEXT
+from sqlmodel import Column, Field, SQLModel, TIMESTAMP, text, UniqueConstraint
 
 
-class Status(str, enum.Enum):
-    """Ticket status"""
-
-    open = "open"
-    closed = "closed"
-
-
-class TicketIN(SQLModel):
+class UserConsentIN(SQLModel):
 
     # User id
     user_id: int = Field(default=None, foreign_key="users.id")
 
-    # Ticket title
-    title: str = Field(default=None, max_length=50, nullable=False)
-
-    # Ticket description
-    description: str = Field(default=None, sa_column=Column(TEXT))
-
-    # Ticket status
-    status: Status = Field(default=None, sa_column=(Enum(Status)))
+    # Status
+    status: bool = Field(default=False)
 
 
-class TicketOut(TicketIN):
+class UserConsentOut(UserConsentIN):
 
     # UUID
     uid: uuid_pkg.UUID = Field(
@@ -39,10 +25,12 @@ class TicketOut(TicketIN):
         nullable=False,
     )
 
+    is_active: bool = Field(default=True)
 
-class TicketIfo(TicketOut, table=True):
 
-    __tablename__ = "ticket_info"
+class UserConsentIfo(UserConsentOut, table=True):
+
+    __tablename__ = "user_consents"
 
     id: Optional[int] = Field(default=None, index=True, primary_key=True)
 
@@ -57,6 +45,11 @@ class TicketIfo(TicketOut, table=True):
     )
     # Last modification date
     modified_at: datetime = Field(
-        default=None,
-        sa_column=Column(TIMESTAMP(timezone=True), nullable=True),
+        sa_column=Column(
+            TIMESTAMP(timezone=True),
+            nullable=False,
+            server_default=text("CURRENT_TIMESTAMP"),
+        ),
+        default_factory=datetime.utcnow,
     )
+    __table_args__ = (UniqueConstraint("user_id", name="uq_user_id"),)
