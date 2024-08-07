@@ -24,33 +24,33 @@ from sqlalchemy import func
 from sqlalchemy.orm import Session
 from dateutil.relativedelta import relativedelta
 
-from ..base_jwt import JWTBearer
-from ..db import get_db
+from base_jwt import JWTBearer
+from db import get_db
 
-from ..models.user.basic_details import Basic, BasicIn, UserPersonalInfo
-from ..models.user.company_details import Company, CompanyIn, UserCompanyInfo
-from ..models.user.business_details import Business, BusinessIn, UserBusinessInfo
-from ..models.user.school_details import School, SchoolIn, UserSchoolInfo
-from ..models.user.business_types import BusinessType, BusinessTypeIn
-from ..models.user.business_natures import BusinessNature
-from ..models.user.loan_types import  LoanType
-from ..models.user.loans import UserLoanInfo
-from ..models.user.loan_applications import LoanApplicationInfo, LoanApplication
-from ..models.user.user_references import UserReferenceIfo, UserReferenceIN
-from ..models.user.tickets import TicketIfo, TicketIN, Status as ticket_Status
-from ..models.user.signup_levels import SignupLevelInfo, SignupLevelIn
-from ..models.user.user_consents import UserConsentIN, UserConsentIfo
-from ..models.user.user_contacts import UserContactIN, UserContactIfo
-from ..models.user.users import Users
-from ..models.user.bank_info import UserBankInfo
-from ..models.user.login_histories import LoginHistory, LoginHistoryIN
-from ..models.user.bank_npci import NPCIBank
-from ..models.user.loan_repayments import LoanRepaymentInfo
+from models.user.basic_details import Basic, BasicIn, UserPersonalInfo
+from models.user.company_details import Company, CompanyIn, UserCompanyInfo
+from models.user.business_details import Business, BusinessIn, UserBusinessInfo
+from models.user.school_details import School, SchoolIn, UserSchoolInfo
+from models.user.business_types import BusinessType, BusinessTypeIn
+from models.user.business_natures import BusinessNature
+from models.user.loan_types import  LoanType
+from models.user.loans import UserLoanInfo
+from models.user.loan_applications import LoanApplicationInfo, LoanApplication
+from models.user.user_references import UserReferenceIfo, UserReferenceIN
+from models.user.tickets import TicketIfo, TicketIN, Status as ticket_Status
+from models.user.signup_levels import SignupLevelInfo, SignupLevelIn
+from models.user.user_consents import UserConsentIN, UserConsentIfo
+from models.user.user_contacts import UserContactIN, UserContactIfo
+from models.user.users import Users
+from models.user.bank_info import UserBankInfo
+from models.user.login_histories import LoginHistory, LoginHistoryIN
+from models.user.bank_npci import NPCIBank
+from models.user.loan_repayments import LoanRepaymentInfo
 
 
 
-from ..util import response, ALLOWED_IMAGE_TYPES, sort_emi_dates
-from ..api_crud import get_all, create_new, get_single, update_single
+from util import response, ALLOWED_IMAGE_TYPES, sort_emi_dates
+from api_crud import get_all, create_new, get_single, update_single
 from os import environ
 from dotenv import load_dotenv
 

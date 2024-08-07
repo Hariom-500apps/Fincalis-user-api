@@ -4,7 +4,7 @@
 import time
 import logging
 
-from .routes import user_routes ,otp
+from routes import user_routes ,otp
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse

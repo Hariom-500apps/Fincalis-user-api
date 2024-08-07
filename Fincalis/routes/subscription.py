@@ -8,25 +8,25 @@ import json
 from os import environ
 from dotenv import load_dotenv
 
-from ..models.user.loan_types import LoanType
-from ..util import response
+from models.user.loan_types import LoanType
+from util import response
 from sqlmodel import select
 
 
 from datetime import date
-from ..api_crud import  create_new, get_single, update_single
-from ..models.user.bank_info import  UserBankInfo
-from ..models.user.users import Users
+from api_crud import  create_new, get_single, update_single
+from models.user.bank_info import  UserBankInfo
+from models.user.users import Users
 from sqlalchemy.orm import Session
-from ..base_jwt import JWTBearer
-from ..db import get_db
+from base_jwt import JWTBearer
+from db import get_db
 from datetime import datetime, timedelta
 from dateutil.relativedelta import relativedelta
 
 
-from ..models.user.loan_applications import LoanApplicationInfo
-from ..models.user.loans import UserLoanInfo
-from ..models.user.loan_repayments import  LoanRepaymentInfo
+from models.user.loan_applications import LoanApplicationInfo
+from models.user.loans import UserLoanInfo
+from models.user.loan_repayments import  LoanRepaymentInfo
 
 
 sub_client_id = environ.get("SUB_TEST_CLIENT_ID")

@@ -4,14 +4,14 @@ from fastapi import APIRouter, Depends
 import logging
 import json
 import http.client
-from ..util import response
-from ..base_jwt import create_service_token
+from util import response
+from base_jwt import create_service_token
 from sqlalchemy.orm import Session
-from ..models.user.users import Users
-from ..models.user.user_consents import UserConsentIfo
-from ..util import response
-from ..db import get_db
-from ..api_crud import create_new
+from models.user.users import Users
+from models.user.user_consents import UserConsentIfo
+from util import response
+from db import get_db
+from api_crud import create_new
 from os import environ
 from dotenv import load_dotenv
 

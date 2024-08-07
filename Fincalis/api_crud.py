@@ -1,12 +1,10 @@
 """API CRUD"""
 
 from typing import Optional
-from fastapi import Depends
 from pydantic import ValidationError
-from sqlmodel import SQLModel, Session,select as _select
+from sqlmodel import SQLModel, select as _select
 
-from .db import get_db
-from .util import response
+from util import response
 from sqlalchemy.engine.row import Row
 from sqlalchemy import and_
 from sqlalchemy.orm import load_only
