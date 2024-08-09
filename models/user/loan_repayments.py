@@ -26,6 +26,7 @@ class LoanRepaymentIn(SQLModel):
     # Loan status
     is_paid: bool = Field(default=False)
 
+
 class LoanRepaymentOut(LoanRepaymentIn):
 
     # UUID
