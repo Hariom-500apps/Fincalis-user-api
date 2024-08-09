@@ -39,6 +39,9 @@ class TicketOut(TicketIN):
         nullable=False,
     )
 
+    # Status
+    is_active : bool =Field(default=True)
+
 
 class TicketIfo(TicketOut, table=True):
 

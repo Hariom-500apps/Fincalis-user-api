@@ -32,6 +32,7 @@ class Gender(str, enum.Enum):
 
     male = "male"
     female = "female"
+    other = "other"
 
 
 class LoanPurpose(str, enum.Enum):

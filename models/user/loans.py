@@ -91,7 +91,6 @@ class UserLoanOut(UserLoanIn):
 
 class UserLoanInfo(UserLoanOut, table=True):
 
-    # __tablename__ = "user_loan_info"
     __tablename__ = "loans"
 
     id: Optional[int] = Field(default=None, index=True, primary_key=True)

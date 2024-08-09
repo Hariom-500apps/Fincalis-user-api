@@ -4,12 +4,14 @@
 import time
 import logging
 
-from routes import user_routes ,otp
+from routes import user_routes ,otp, subscription
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.status import HTTP_422_UNPROCESSABLE_ENTITY
+from fastapi.middleware.cors import CORSMiddleware
+
 
 # from .db import create_db_tables
 # create_db_tables()
@@ -65,6 +67,13 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             },
         },
     )
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all methods
+    allow_headers=["*"],  # Allow all headers
+)
 
 @app.middleware("http")
 async def add_process_time_header(request: Request, call_next):
@@ -88,4 +97,4 @@ def read_root():
 # Routes
 app.include_router(prefix="/user", router=user_routes.router)
 app.include_router(prefix="/otp", router=otp.router, tags=["OTP"])
-# app.include_router(prefix="/subscription", router=subscription.router, tags=["Subscription"])
+app.include_router(prefix="/subscription", router=subscription.router, tags=["Subscription"])

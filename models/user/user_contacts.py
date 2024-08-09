@@ -25,7 +25,7 @@ class UserContactOut(UserContactIN):
         nullable=False,
     )
 
-    is_active: bool = True
+    is_active: bool = Field(default=True)
 
 
 class UserContactIfo(UserContactOut, table=True):
