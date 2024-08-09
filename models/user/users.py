@@ -44,8 +44,6 @@ class UserIn(User):
 
     user_type: UserType = Field(default=UserType.user, sa_column=Column(Enum(UserType)))
 
-    
-
     email_verified: bool = Field(default=False)
 
 
@@ -75,7 +73,7 @@ class Users(UserOut, table=True):
     is_blocked: bool = Field(default=False)
     is_staff: bool = Field(default=False)
     password: str = Field(default=None, max_length=255, nullable=True)
-    fcm_token :str = Field(default=None, max_length=255)
+    fcm_token: str = Field(default=None, max_length=255)
 
     # Creation date of User
     created_at: datetime = Field(
@@ -101,7 +99,3 @@ class Users(UserOut, table=True):
         UniqueConstraint("email", name="uq_email"),
         UniqueConstraint("mobile", name="uq_mobile"),
     )
-    # personal_info: "UserPersonalInfo" = Relationship(back_populates="users")
-    # company_info: "UserCompanyInfo" = Relationship(back_populates="users")
-    # business_info: "UserBusinessInfo" = Relationship(back_populates="users")
-    # school_info: "UserSchoolInfo" = Relationship(back_populates="users")

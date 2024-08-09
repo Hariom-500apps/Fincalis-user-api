@@ -94,6 +94,19 @@ async def create_new(model_input, db_model, db, message):
 
     return response_obj
 
+def bulk_create_items(model_inputs,db_model, db):
+    try:
+        db_items = [db_model(loan_id= model_inputs["loan_id"],amount=model_inputs["amount"],date=emi_date) for emi_date in model_inputs["date"]]
+        db.bulk_save_objects(db_items)
+        db.commit()
+        db.refresh(db_items)
+        return "items saved successfully"
+    
+    except (ValidationError, Exception) as exc:
+        response_obj = response(str(exc), 0, 400)
+    return response_obj
+
+
 
 async def update_single(item_id, model_input, db_model, db, message, level=False):
     try:

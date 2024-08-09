@@ -1,32 +1,20 @@
-"""Loan repayments details"""
+"""School names details"""
 
 import uuid as uuid_pkg
 from typing import Optional
-from datetime import datetime, date as date_field
+from datetime import datetime
+from sqlmodel import TIMESTAMP, text
+
+from sqlmodel import SQLModel, Field, Column
 
 
-from sqlmodel import Column, Field, SQLModel, TIMESTAMP, text
+class SchoolNameIn(SQLModel):
+
+    # Name of the school
+    name: str = Field(default=None, max_length=500, nullable=False)
 
 
-class LoanRepaymentIn(SQLModel):
-
-    amount: int = Field(default=None, nullable=False)
-
-    date: date_field = Field(
-        default=None,
-        sa_column=Column(TIMESTAMP(timezone=True), nullable=True),
-    )
-
-    # Loan type id
-    loan_id: int = Field(default=None, foreign_key="loans.id")
-
-    # Loan status
-    is_active: bool = Field(default=True)
-
-    # Loan status
-    is_paid: bool = Field(default=False)
-
-class LoanRepaymentOut(LoanRepaymentIn):
+class SchoolNameOut(SchoolNameIn):
 
     # UUID
     uid: uuid_pkg.UUID = Field(
@@ -34,12 +22,14 @@ class LoanRepaymentOut(LoanRepaymentIn):
         index=True,
         nullable=False,
     )
+    is_active: bool = Field(default=True)
 
 
-class LoanRepaymentInfo(LoanRepaymentOut, table=True):
+class SchoolName(SchoolNameOut, table=True):
 
-    __tablename__ = "loan_repayments"
+    __tablename__ = "schools"
 
+    # Id
     id: Optional[int] = Field(default=None, index=True, primary_key=True)
 
     # Creation date
@@ -51,7 +41,7 @@ class LoanRepaymentInfo(LoanRepaymentOut, table=True):
         ),
         default_factory=datetime.utcnow,
     )
-    # Last modification date
+    # Modified date
     modified_at: datetime = Field(
         sa_column=Column(
             TIMESTAMP(timezone=True),

@@ -7,6 +7,7 @@ import math
 import mimetypes
 import shutil
 import os
+from io import BytesIO
 import logging
 from datetime import datetime
 from pydantic import BaseModel,EmailStr
@@ -23,8 +24,11 @@ from fastapi import (
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 from dateutil.relativedelta import relativedelta
+from starlette.responses import StreamingResponse
 
 from base_jwt import JWTBearer
+from bunny_net import upload_file, get_file
+
 from db import get_db
 
 from models.user.basic_details import Basic, BasicIn, UserPersonalInfo
@@ -45,12 +49,14 @@ from models.user.users import Users
 from models.user.bank_info import UserBankInfo
 from models.user.login_histories import LoginHistory, LoginHistoryIN
 from models.user.bank_npci import NPCIBank
+from models.user.schools import SchoolName
+
 from models.user.loan_repayments import LoanRepaymentInfo
 
 
 
 from util import response, ALLOWED_IMAGE_TYPES, sort_emi_dates
-from api_crud import get_all, create_new, get_single, update_single
+from api_crud import get_all, create_new, get_single, update_single,bulk_create_items
 from os import environ
 from dotenv import load_dotenv
 
@@ -61,8 +67,6 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 # Define the directory where files will be saved
-UPLOAD_DIRECTORY = "Upload"
-os.makedirs(UPLOAD_DIRECTORY, exist_ok=True)
 
 background_tasks = BackgroundTasks()
 
@@ -297,6 +301,12 @@ async def get_bank_name(
 ):
     return await get_all(NPCIBank, db, "Bank list", columns=["bank_name"])
 
+@router.get("/school/name")
+async def get_school_name(
+    db: Session = Depends(get_db),
+    token_data: BaseModel = Depends(JWTBearer()),
+):
+    return await get_all(SchoolName, db, "School list", columns=["name"])
 
 @router.put("/profile")
 async def update_profile(
@@ -315,11 +325,16 @@ async def update_profile(
                 return response(message, 0, 400)
 
             new_filename = f"{user_id}_profile_{profile_img.filename}"
-            file_path = os.path.join(UPLOAD_DIRECTORY, new_filename)
 
-            with open(file_path, "wb") as buffer:
-                shutil.copyfileobj(profile_img.file, buffer)
-                update_input["image"] = file_path
+            temp_file_path = f"/tmp/{new_filename}"
+
+            with open(temp_file_path, "wb") as f:
+                content = await profile_img.read()
+                f.write(content)
+
+            response_obj = upload_file(temp_file_path,new_filename, m="p_image")
+            if response_obj.status_code ==201:
+                update_input["image"] = new_filename
         if email:
             update_input["email"] = email
         if full_name:
@@ -335,6 +350,52 @@ async def update_profile(
         response(str(exc), 0, 404)        
 
 
+@router.get("/profile/image")
+async def get_user_profile(
+    user_id: str,
+    db: Session = Depends(get_db),
+    token_data: BaseModel = Depends(JWTBearer()),
+):  
+    try: 
+        response_obj = await get_single(Users, db, user_id,columns=["image"])
+        profile_image_url = getattr(response_obj.data["result"], 'image', None)
+        if profile_image_url:
+            response_date = get_file(response_obj.data["result"].image, m="p_image")
+            if response_date.status_code == 200:
+                image_stream = BytesIO(response_date.content)
+                return StreamingResponse(image_stream, media_type="image/jpeg")
+        
+            
+        return response("Image not found",0,400)
+    except Exception as exc:
+        msg = f"get profile image exception {str(exc)}"
+        logger.exception(msg)
+        response(str(exc), 0, 404) 
+
+@router.get("/pan/image",tags=["verification"])
+async def get_user_pan(
+    user_id: str,
+    db: Session = Depends(get_db),
+    token_data: BaseModel = Depends(JWTBearer()),
+):  
+    try: 
+        response_obj = await get_single(UserPersonalInfo, db, user_id, level=True, columns=["pan_image"])
+        
+        pan_image_url = getattr(response_obj.data["result"], 'pan_image', None)
+        if pan_image_url:
+            response_date = get_file(pan_image_url, m="pan_image")
+            
+            if response_date.status_code == 200:
+                image_stream = BytesIO(response_date.content)
+                return StreamingResponse(image_stream, media_type="image/jpeg")
+        
+        return response("PAN Image not found", 0, 400)
+    except Exception as exc:
+        msg = f"get pan image exception {str(exc)}"
+        logger.exception(msg)
+        response(str(exc), 0, 404) 
+
+
 @router.get("/profile")
 async def get_user_profile(
     user_id: str,
@@ -342,16 +403,6 @@ async def get_user_profile(
     token_data: BaseModel = Depends(JWTBearer()),
 ):
     return await get_single(Users, db, user_id)
-
-
-@router.get("/contacts")
-async def get_user_contacts(
-    user_id: str,
-    db: Session = Depends(get_db),
-    token_data: BaseModel = Depends(JWTBearer()),
-):
-    column = ["contact_json"]
-    return await get_single(UserContactIfo, db, user_id, level=True, columns=column)
 
 
 @router.post("/contact")
@@ -366,14 +417,9 @@ async def upload_contact(
             raise HTTPException(
                 status_code=400, detail="Invalid file type. Only JSON files are accepted."
             )
-        new_filename = f"{user_id}_pan_{contact_json.filename}"
-        file_path = os.path.join(UPLOAD_DIRECTORY, new_filename)
+        contact_json_content = await contact_json.read()
 
-        with open(file_path, "wb") as buffer:
-            shutil.copyfileobj(contact_json.file, buffer)
-
-        # contact_json_content = await contact_json.read()
-        contact_input = UserContactIN(user_id=user_id, contact_json=file_path)
+        contact_input = UserContactIN(user_id=user_id, contact_json=contact_json_content)
         message = "User contacts added successfully"
 
         response_obj =  await create_new(contact_input, UserContactIfo, db, message)
@@ -389,7 +435,7 @@ async def get_user_basic_info(
     db: Session = Depends(get_db),
     token_data: BaseModel = Depends(JWTBearer()),
 ):
-
+    
     response_obj=  await get_single(UserPersonalInfo, db, user_id, level=True)
     if response_obj.data["result"]:
         profile_response = await get_single(Users, db, user_id, columns=["email","full_name"])
@@ -640,6 +686,24 @@ async def user_login_history(
     response_obj= await create_new(login_history, LoginHistory, db, message)
     return response_obj.settings
 
+@router.get("/transaction/history")
+async def user_transaction_history(
+    user_id: str,
+    db: Session = Depends(get_db),
+    token_data: BaseModel = Depends(JWTBearer()),
+):
+    try:
+        loan_response = await get_single(UserLoanInfo, db, user_id, level=True, columns=["id"])
+        filters = {"is_paid": 1, "loan_id": loan_response.data["result"].id}
+        response_obj = await get_all(LoanRepaymentInfo, db, "Transaction histories", filters=filters)
+        return response_obj
+    
+    except Exception as exc:
+        msg = f"user emi breakup exception {str(exc)}"
+        logger.exception(msg)
+        return response(str(exc), 0, 404)
+    
+
 
 @router.get("/emi/breakup")
 async def get_emi_breakup(
@@ -723,7 +787,6 @@ async def get_loan_application_info(
     message = "Loan application details"
 
     return response(message, 1, 200, loan_details)
-from typing import List
 
 @router.post("/loan/application")
 async def user_loan_application(
@@ -733,93 +796,120 @@ async def user_loan_application(
     db: Session = Depends(get_db),
     token_data: BaseModel = Depends(JWTBearer()),
 ):
+    try:
+        loan_details = await get_loan_details(user_id, db)
 
-    loan_details = await get_loan_details(user_id, db)
-
-    total_loan_amount = (
-        loan_amount
-        + loan_details["processing_fee"]
-        + loan_details["gateway_fee"]
-        + loan_details["additional_fee"]
-    )
-    loan_input = {
-        "loan_required": total_loan_amount,
-    }
-    background_tasks.add_task(
-        update_single, user_id, loan_input, LoanApplicationInfo, db, "message", level=True
-    )
-    monthly_emi = math.ceil(total_loan_amount/float(tenure))
-    current_date = datetime.now()
-
-    if current_date.day > 2:
-        # Move to the next month first
-        start_date = (current_date.replace(day=1) + relativedelta(months=1)).replace(
-            day=2
+        total_loan_amount = (
+            loan_amount
+            + loan_details["processing_fee"]
+            + loan_details["gateway_fee"]
+            + loan_details["additional_fee"]
         )
-    else:
-        start_date = current_date.replace(day=2)
-
-    emi_dates = {}
-    for i in range(int(tenure)):
-        emi_date = start_date + relativedelta(months=i)
-        emi_dates[emi_date.strftime("%d-%b-%Y")] = monthly_emi
-
-    sorted_emi_dates = sort_emi_dates(emi_dates)
-
-    emi_dates_list = []
-    for i in range(int(9)):
-        emi_date = start_date + relativedelta(months=i)
-        emi_dates_list.append(emi_date.strftime("%Y-%m-%d"))
-        emi_date = emi_date + relativedelta(months=1)
-        
-    user_loan_info_id = await get_single(UserLoanInfo,db,user_id,level=True,columns=["id"])
-    lon_info_id = dict(user_loan_info_id)["data"]["result"].id
-
-    max_loan_no = db.query(func.max(UserLoanInfo.loan_no)).filter(UserLoanInfo.loan_no.like(f'{LOAN_NO[:4]}%')).scalar()
-
-    if max_loan_no:
-
-        loan_no = max_loan_no
-        new_loan_no = loan_no[:-5] + f"{int(loan_no[-5:]) + 1:05}"
-    else:
-        new_loan_no = LOAN_NO
-    update_input = {
-        "loan_no": new_loan_no
-    }
-    background_tasks.add_task(
-            update_single, user_id, update_input, UserLoanInfo,db, "message", level=True
-
+        loan_input = {
+            "loan_required": total_loan_amount,
+        }
+        background_tasks.add_task(
+            update_single, user_id, loan_input, LoanApplicationInfo, db, "message", level=True
         )
-   
-    for i in range (int(tenure)):
+        monthly_emi = math.ceil(total_loan_amount/float(tenure))
+        current_date = datetime.now()
+
+        if current_date.day > 2:
+            # Move to the next month first
+            start_date = (current_date.replace(day=1) + relativedelta(months=1)).replace(
+                day=2
+            )
+        else:
+            start_date = current_date.replace(day=2)
+
+        emi_dates = {}
+        for i in range(int(tenure)):
+            emi_date = start_date + relativedelta(months=i)
+            emi_dates[emi_date.strftime("%d-%b-%Y")] = monthly_emi
+
+        sorted_emi_dates = sort_emi_dates(emi_dates)
+
+        emi_dates_list = []
+        for i in range(int(9)):
+            emi_date = start_date + relativedelta(months=i)
+            emi_dates_list.append(emi_date.strftime("%Y-%m-%d"))
+            emi_date = emi_date + relativedelta(months=1)
+            
+        user_loan_info_id = await get_single(UserLoanInfo,db,user_id,level=True,columns=["id"])
+        lon_info_id = dict(user_loan_info_id)["data"]["result"].id
+
+        max_loan_no = db.query(func.max(UserLoanInfo.loan_no)).filter(UserLoanInfo.loan_no.like(f'{LOAN_NO[:4]}%')).scalar()
+
+        if max_loan_no:
+
+            loan_no = max_loan_no
+            new_loan_no = loan_no[:-5] + f"{int(loan_no[-5:]) + 1:05}"
+        else:
+            new_loan_no = LOAN_NO
+        update_input = {
+            "loan_no": new_loan_no
+        }
+        background_tasks.add_task(
+                update_single, user_id, update_input, UserLoanInfo,db, "message", level=True
+
+            )
+    
         input_model = {
-            "loan_id":lon_info_id,"amount":monthly_emi, "date":emi_dates_list[i]
+                    "loan_id": lon_info_id,
+                    "amount": monthly_emi,
+                    "date": emi_dates_list,
+                }
+        background_tasks.add_task(
+            bulk_create_items, input_model, LoanRepaymentInfo,db
+        )
+
+
+        message = "EMI calculated successfully"
+        data = {
+            "tenure": f"{tenure} Months",
+            "total_loan_amount": total_loan_amount,
+            "loan_approved": loan_details["loan_approved"],
+            "processing_fee": loan_details["processing_fee"],
+            "gateway_fee": loan_details["gateway_fee"],
+            "additional_fee": loan_details["additional_fee"],
+            "monthly emi": monthly_emi,
+            "emi_dates": sorted_emi_dates,
+            "emi_repay_date": list(sorted_emi_dates.keys()),
         }
 
-        background_tasks.add_task(
-            create_new,input_model, LoanRepaymentInfo,db, "message"
+        response_obj =  response(message, 1, 200, data)
+        return response_obj
+    except Exception as exc:
+        msg = f"loan application exception {str(exc)}"
+        logger.exception(msg)
+        response(str(exc), 0, 404)
 
+@router.get("/bank/statement",tags=["verification"])
+async def get_bank_statement(
+    user_id: str,
+    db: Session = Depends(get_db),
+    token_data: BaseModel = Depends(JWTBearer()),
+):  
+    try:
+        pdf_response = await get_single(
+            LoanApplicationInfo, db, user_id, level=True, columns=["statement"]
         )
+        
+        pdf_response_url = getattr(pdf_response.data["result"], 'statement', None)
+        if pdf_response_url:
+            response_date = get_file(pdf_response_url, m="bank_st")
+            
+            if response_date.status_code == 200:
+                image_stream = BytesIO(response_date.content)
+                return StreamingResponse(image_stream, media_type="application/pdf")
+        
+        return response("Bank statement not found", 0, 400)
+    except Exception as exc:
+        msg = f"get bank statement exception {str(exc)}"
+        logger.exception(msg)
+        response(str(exc), 0, 404)
 
-
-    message = "EMI calculated successfully"
-    data = {
-        "tenure": f"{tenure} Months",
-        "total_loan_amount": total_loan_amount,
-        "loan_approved": loan_details["loan_approved"],
-        "processing_fee": loan_details["processing_fee"],
-        "gateway_fee": loan_details["gateway_fee"],
-        "additional_fee": loan_details["additional_fee"],
-        "monthly emi": monthly_emi,
-        "emi_dates": sorted_emi_dates,
-        "emi_repay_date": list(sorted_emi_dates.keys()),
-    }
-
-    response_obj =  response(message, 1, 200, data)
-    return response_obj
-
-
-@router.post("/upload/bank/statement")
+@router.post("/upload/bank/statement", tags=["verification"])
 async def upload_bank_statement(
     background_tasks: BackgroundTasks,
     user_id: str = Form(...),
@@ -827,34 +917,43 @@ async def upload_bank_statement(
     db: Session = Depends(get_db),
     token_data: BaseModel = Depends(JWTBearer()),
 ):
+    try:
+        if file.content_type != "application/pdf":
+            message = "Invalid file type. Only PDF files are allowed."
+            return response(message, 0, 400)
 
-    if file.content_type != "application/pdf":
-        message = "Invalid file type. Only PDF files are allowed."
-        return response(message, 0, 400)
+        new_filename = f"{user_id}_bank_statement_{file.filename}"
+        temp_file_path = f"/tmp/{new_filename}"
 
-    new_filename = f"{user_id}_bank_statement_{file.filename}"
-    file_path = os.path.join(UPLOAD_DIRECTORY, new_filename)
+        with open(temp_file_path, "wb") as f:
+            content = await file.read()
+            f.write(content)
 
-    with open(file_path, "wb") as buffer:
-        shutil.copyfileobj(file.file, buffer)
+        response_obj = upload_file(temp_file_path,new_filename, m="bank_st")
+        if response_obj.status_code ==201:
 
-    update_input = {"statement": file_path}
-    message = "Bank statement added successfully"
-    response_obj = await update_single(
-        user_id, update_input, LoanApplicationInfo, db, "message", level=True
-    )
+            update_input = {"statement": new_filename}
+            message = "Bank statement added successfully"
+            response_obj = await update_single(
+                user_id, update_input, LoanApplicationInfo, db, "message", level=True
+            )
 
-    if response_obj.data["result"]:
-        input_field = {"is_document_completed": True}
-        update_input = {
-              "loan_status" :"under_review"
-        }
-        user_loan_info_id = await get_single(UserLoanInfo,db,user_id,level=True,columns=["id"])
-        lon_info_id = dict(user_loan_info_id)["data"]["result"].id
-        background_tasks.add_task(update_single, lon_info_id,update_input,UserLoanInfo,db,"message")
-        kyc_background_signup_level(user_id, background_tasks, db, input_field)
+            if response_obj.data["result"]:
+                input_field = {"is_document_completed": True}
+                update_input = {
+                    "loan_status" :"under_review"
+                }
+                user_loan_info_id = await get_single(UserLoanInfo,db,user_id,level=True,columns=["id"])
+                lon_info_id = dict(user_loan_info_id)["data"]["result"].id
+                background_tasks.add_task(update_single, lon_info_id,update_input,UserLoanInfo,db,"message")
+                kyc_background_signup_level(user_id, background_tasks, db, input_field)
 
-    return response_obj.settings
+            return response_obj.settings
+        return response("Failed to upload file", 0, response_obj.status_code)
+    except Exception as exc:
+        msg = f"upload bank statement exception {str(exc)}"
+        logger.exception(msg)
+        response(str(exc), 0, 404)
 
 
 @router.post("/verify/bank",tags=["verification"])
@@ -909,7 +1008,7 @@ async def verify_Bank(
 
 
 
-@router.get("/bank/statement")
+@router.get("/bank/statement", tags=["verification"])
 async def get_bank_statement(
     user_id: int,
     db: Session = Depends(get_db),
@@ -1123,7 +1222,7 @@ async def verify_aadhaar_otp(
             input_field = {"is_adhaar_verified": True}
 
             kyc_background_signup_level(user_id, background_tasks, db, input_field)
-            update_input = {"aadhaar": aadhaar_number}
+            update_input = {"aadhar": aadhaar_number}
             await update_single(
                 user_id, update_input, UserPersonalInfo, db, "message", level=True
             )
