@@ -641,6 +641,7 @@ async def select_loan_type(
 ):
     try:
         loan_input = {"user_id": user_id, "loan_id": loan_id}
+        
         response_obj = await get_single(LoanApplicationInfo, db, user_id, level=True)
         if response_obj.data["result"]:
             message = "Loan type updated successfully"
