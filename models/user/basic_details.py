@@ -15,7 +15,6 @@ from sqlmodel import (
     SQLModel,
     TIMESTAMP,
     text,
-    Relationship,
     UniqueConstraint,
 )
 
@@ -119,8 +118,6 @@ class BasicOut(BasicIn):
     # User status
     is_active: bool = Field(default=True)
 
-    # verified_status:bool= Field(default=False)
-
 
 class UserPersonalInfo(BasicOut, table=True):
 
@@ -136,6 +133,10 @@ class UserPersonalInfo(BasicOut, table=True):
 
     # Pan image
     pan_image: str = Field(default=None, nullable=True)
+
+    # Aadhar image
+    aadhar_image: str = Field(default=None, nullable=True)
+    
 
     @field_validator("aadhar")
     def check_aadhar(cls, v):

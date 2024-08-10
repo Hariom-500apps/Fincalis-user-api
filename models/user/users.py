@@ -69,11 +69,16 @@ class Users(UserOut, table=True):
     id: Optional[int] = Field(default=None, index=True, primary_key=True)
 
     is_superuser: bool = Field(default=False)
+
     is_admin: bool = Field(default=False)
+
     is_blocked: bool = Field(default=False)
+
     is_staff: bool = Field(default=False)
+
     password: str = Field(default=None, max_length=255, nullable=True)
-    fcm_token: str = Field(default=None, max_length=255)
+
+    fcm_token: str = Field(default=None, max_length=255, nullable=True)
 
     # Creation date of User
     created_at: datetime = Field(

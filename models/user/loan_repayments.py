@@ -1,11 +1,18 @@
 """Loan repayments details"""
 
+import enum
 import uuid as uuid_pkg
 from typing import Optional
 from datetime import datetime, date as date_field
 
 
-from sqlmodel import Column, Field, SQLModel, TIMESTAMP, text
+from sqlmodel import Column, Field, SQLModel, TIMESTAMP, text, Enum
+
+
+class PaymentStatus(str, enum.Enum):
+    pending = "pending"
+    credited = "credited"
+    debited = "debited"
 
 
 class LoanRepaymentIn(SQLModel):
@@ -25,6 +32,11 @@ class LoanRepaymentIn(SQLModel):
 
     # Loan status
     is_paid: bool = Field(default=False)
+
+    status: PaymentStatus = Field(
+        default=PaymentStatus.pending,
+        sa_column=Column(Enum(PaymentStatus), nullable=True),
+    )
 
 
 class LoanRepaymentOut(LoanRepaymentIn):

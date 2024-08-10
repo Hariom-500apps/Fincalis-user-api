@@ -7,7 +7,7 @@ from datetime import datetime
 from os import environ
 
 from dotenv import load_dotenv
-from sqlmodel import Column, Field, SQLModel, TIMESTAMP, text, Enum, JSON
+from sqlmodel import Column, Field, SQLModel, TIMESTAMP, text, Enum
 
 
 load_dotenv()

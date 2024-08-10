@@ -40,7 +40,7 @@ class TicketOut(TicketIN):
     )
 
     # Status
-    is_active : bool =Field(default=True)
+    is_active: bool = Field(default=True)
 
 
 class TicketIfo(TicketOut, table=True):
