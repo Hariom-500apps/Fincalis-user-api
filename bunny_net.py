@@ -34,7 +34,6 @@ def upload_file(file_path, file_name, m):
         }
         with open(file_path, 'rb') as file_data:
             response = requests.put(url, headers=headers, data=file_data)
-        print(response.status_code, response.text)
         return response 
     except Exception as exc:
         msg = f"upload file bunny exception {str(exc)}"
