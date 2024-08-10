@@ -38,7 +38,7 @@ class LoanApplicationOut(LoanApplicationIn):
     is_active: bool = Field(default=True)
 
     # Loan approved
-    loan_approved: float = Field(default=None, nullable=True)
+    loan_approved: float = Field(default=0.00, nullable=True)
 
     # Statement
     statement: str = Field(default=None, nullable=True)

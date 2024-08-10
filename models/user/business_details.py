@@ -58,8 +58,6 @@ class BusinessInOut(BusinessIn):
 
 class UserBusinessInfo(BusinessInOut, table=True):
 
-    # __tablename__ = "user_business_info"
-
     __tablename__ = "business_details"
 
     id: Optional[int] = Field(default=None, index=True, primary_key=True)

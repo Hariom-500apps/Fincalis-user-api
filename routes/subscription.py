@@ -12,12 +12,13 @@ from sqlalchemy.orm import Session
 from datetime import datetime, timedelta, date
 from dateutil.relativedelta import relativedelta
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, BackgroundTasks
+
 
 
 from dotenv import load_dotenv
 from util import response
-from api_crud import get_single
+from api_crud import get_single,update_single
 from base_jwt import JWTBearer
 from db import get_db
 from models.user.loan_types import LoanType
@@ -26,6 +27,7 @@ from models.user.users import Users
 from models.user.loan_applications import LoanApplicationInfo
 from models.user.loans import UserLoanInfo
 from models.user.loan_repayments import LoanRepaymentInfo
+
 
 
 sub_client_id = environ.get("SUB_TEST_CLIENT_ID")
@@ -38,6 +40,7 @@ router = APIRouter()
 load_dotenv()
 
 logger = logging.getLogger(__name__)
+background_tasks = BackgroundTasks()
 
 
 
@@ -66,7 +69,7 @@ async def get_pre_subscription_info(user_id: str, db: Session = Depends(get_db),
             "Name": user_profile_obj["full_name"],
             "Phone": user_profile_obj["mobile"],
             "Email": user_profile_obj["email"],
-            "accountNumber": user_account_obj["account_no"],
+            "accountNumber": user_account_obj["account_number"],
             "bankName": user_account_obj["bank_name"],
             "accountHolderName": user_account_obj["account_holder_name"],
             "ifsc": user_account_obj["ifsc_code"],
@@ -75,7 +78,7 @@ async def get_pre_subscription_info(user_id: str, db: Session = Depends(get_db),
     except Exception as exc:
         msg = f"get pre subscription info exception {str(exc)}"
         logger.exception(msg)
-        response(str(exc), 0, 404)
+        return response(str(exc), 0, 404)
 
 
 @router.post("/plan/subscription")
@@ -87,6 +90,7 @@ async def create_subscription_with_plan(
     account_number: str,
     account_holder_name: str,
     ifsc_code: str,
+    background_tasks: BackgroundTasks,
     db: Session = Depends(get_db),
     token_data: BaseModel = Depends(JWTBearer()),
 ):
@@ -158,6 +162,10 @@ async def create_subscription_with_plan(
         response_data = requests.post(url, data=json.dumps(payload), headers=headers)
         response_obj = json.loads(response_data.text)
         if response_obj["status"] == 200:
+            update_input = {
+                    "loan_status" :"disbursed_pending"
+                }
+            background_tasks.add_task(update_single, user_id,update_input,UserLoanInfo,db,"message", level=True)
             return response(response_obj["message"], 1, 201, response_obj["data"])
 
         return response(response_obj["message"], 0, 400)
@@ -165,4 +173,4 @@ async def create_subscription_with_plan(
     except Exception as exc:
         msg = f"create subscription plan exception {str(exc)}"
         logger.exception(msg)
-        response(str(exc), 0, 404)
+        return response(str(exc), 0, 404)

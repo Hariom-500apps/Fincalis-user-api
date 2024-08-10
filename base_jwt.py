@@ -97,7 +97,6 @@ def create_service_token(
         token_type="access",
         user_type="user",
     )
-    print("token data", tokendata)
 
     jwt_token = create_access_token(
         tokendata.asdict(), expires_delta=timedelta(days=expiry_days)

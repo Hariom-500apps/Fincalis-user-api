@@ -3,6 +3,7 @@
 
 import time
 import logging
+import ipaddress
 
 from routes import user_routes ,otp, subscription
 
@@ -10,11 +11,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
 from starlette.status import HTTP_422_UNPROCESSABLE_ENTITY
-from fastapi.middleware.cors import CORSMiddleware
 
-
-# from .db import create_db_tables
-# create_db_tables()
 
 logger = logging.getLogger(__name__)
 app = FastAPI()
@@ -67,13 +64,15 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             },
         },
     )
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],  # Allow all origins
-    allow_credentials=True,
-    allow_methods=["*"],  # Allow all methods
-    allow_headers=["*"],  # Allow all headers
-)
+allowed_ips = ["34.168.253.122"]
+
+@app.middleware("http")
+async def ip_whitelist(request: Request, call_next):
+    client_ip = request.client.host
+    if ipaddress.ip_address(client_ip) not in allowed_ips:
+        return JSONResponse({"message": "IP is not whitelisted", "type": "error"}, status_code=403)
+    response = await call_next(request)
+    return response
 
 @app.middleware("http")
 async def add_process_time_header(request: Request, call_next):

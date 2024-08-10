@@ -22,6 +22,8 @@ def upload_file(file_path, file_name, m):
             dir = "pan_images"
         elif m == "bank_st":
             dir = "bank_statement"
+        else:
+            dir = "aadhar_images"
             
         url = f"https://{base_url}/{STORAGE_ZONE_NAME}/fincalis/media/{dir}/{file_name}"
 
@@ -32,7 +34,6 @@ def upload_file(file_path, file_name, m):
         }
         with open(file_path, 'rb') as file_data:
             response = requests.put(url, headers=headers, data=file_data)
-        print(response.status_code, response.text)
         return response 
     except Exception as exc:
         msg = f"upload file bunny exception {str(exc)}"
@@ -47,6 +48,8 @@ def get_file(file_name, m):
             dir = "pan_images"
         elif m == "bank_st":
             dir = "bank_statement"
+        else:
+            dir = "aadhar_images"
         url = f"https://{base_url}/{STORAGE_ZONE_NAME}/fincalis/media/{dir}/{file_name}"
         headers = {
             "AccessKey": ACCESS_KEY,
