@@ -22,6 +22,8 @@ class NPCIBankOut(NPCIBankIn):
         index=True,
         nullable=False,
     )
+    
+    is_active: bool = Field(default=True)
 
 
 class NPCIBank(NPCIBankOut, table=True):

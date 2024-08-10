@@ -14,7 +14,7 @@ class BankIn(SQLModel):
     bank_name: str = Field(default=None, max_length=200, nullable=False)
 
     # Account number
-    account_no: str = Field(default=None, max_length=50, nullable=False)
+    account_number: str = Field(default=None, max_length=50, nullable=False)
 
     # Bank account holder name
     account_holder_name: str = Field(default=None, max_items=100, nullable=False)

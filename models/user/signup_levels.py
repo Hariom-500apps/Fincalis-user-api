@@ -31,11 +31,17 @@ class SignupLevelIn(SQLModel):
     # Adhaar verified status
     is_adhaar_verified: bool = Field(default=False, nullable=True)
 
+    # Aadhar image uploaded status
+    is_aadhar_image_uploaded: bool = Field(default=False, nullable=True)
+
     # Pan image uploaded status
     is_pan_image_uploaded: bool = Field(default=False, nullable=True)
 
     # Document info status
     is_document_completed: bool = Field(default=False, nullable=True)
+
+    # bank verification status
+    is_bank_verified:bool  = Field(default=False, nullable=True)
 
     # User id
     user_id: int = Field(default=None, foreign_key="users.id")

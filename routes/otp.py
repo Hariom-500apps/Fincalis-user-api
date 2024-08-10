@@ -50,7 +50,7 @@ async def send(name: str, mobile: int):
     except Exception as exc:
         msg = f"send otp exception {str(exc)}"
         logger.exception(msg)
-        return str(exc)
+        return response(str(exc), 0, 404)
 
 
 @router.post("/verify")
@@ -110,7 +110,7 @@ async def verify(
     except Exception as exc:
         msg = f"verify otp exception {str(exc)}"
         logger.exception(msg)
-        return str(exc)
+        return response(str(exc), 0, 404)
 
 
 @router.post("/resend")
@@ -131,4 +131,4 @@ async def resend(mobile: int):
     except Exception as exc:
         msg = f"resend otp exception {str(exc)}"
         logger.exception(msg)
-        return str(exc)
+        return response(str(exc), 0, 404)
