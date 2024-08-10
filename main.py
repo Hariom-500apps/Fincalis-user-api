@@ -64,15 +64,15 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
             },
         },
     )
-allowed_ips = ["34.168.253.122"]
+# allowed_ips = ["34.168.253.122"]
 
-@app.middleware("http")
-async def ip_whitelist(request: Request, call_next):
-    client_ip = request.client.host
-    if ipaddress.ip_address(client_ip) not in allowed_ips:
-        return JSONResponse({"message": "IP is not whitelisted", "type": "error"}, status_code=403)
-    response = await call_next(request)
-    return response
+# @app.middleware("http")
+# async def ip_whitelist(request: Request, call_next):
+#     client_ip = request.client.host
+#     if ipaddress.ip_address(client_ip) not in allowed_ips:
+#         return JSONResponse({"message": "IP is not whitelisted", "type": "error"}, status_code=403)
+#     response = await call_next(request)
+#     return response
 
 @app.middleware("http")
 async def add_process_time_header(request: Request, call_next):
